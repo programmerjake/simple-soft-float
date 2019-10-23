@@ -7,6 +7,7 @@ authors = ["Jacob Lifshay <programmerjake@gmail.com>"]
 edition = "2018"
 license = "LGPL-2.1-or-later"
 description = "soft-float library that intends to be a straightforward reference implementation of IEEE 754"
+readme = "README.md"
 
 [dependencies]
 algebraics = ">= 0.1.1, < 0.2"

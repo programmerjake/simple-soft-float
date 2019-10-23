@@ -14,3 +14,12 @@ mod tests {
         );
     }
 }
+
+macro_rules! doctest {
+    ($x:expr) => {
+        #[doc = $x]
+        extern {}
+    };
+}
+
+doctest!(include_str!("../README.md"));
