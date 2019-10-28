@@ -10,8 +10,9 @@ description = "soft-float library that intends to be a straightforward reference
 readme = "README.md"
 
 [dependencies]
-algebraics = ">= 0.1.1, < 0.2"
+algebraics = ">= 0.1.2, < 0.2"
 num-bigint = "0.2"
 num-integer = "0.1"
 num-traits = "0.2"
+num-rational = "0.2"
 bitflags = "1.2"

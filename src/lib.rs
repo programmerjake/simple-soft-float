@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // See Notices.txt for copyright information
 
+use algebraics::prelude::*;
 use bitflags::bitflags;
+use num_bigint::BigInt;
 use num_bigint::BigUint;
 use num_integer::Integer;
+use num_rational::Ratio;
 use num_traits::FromPrimitive;
 use num_traits::NumAssign;
 use num_traits::NumAssignRef;
@@ -17,6 +20,7 @@ use std::ops::BitOr;
 use std::ops::BitOrAssign;
 use std::ops::BitXor;
 use std::ops::BitXorAssign;
+use std::ops::Neg;
 use std::ops::Shl;
 use std::ops::ShlAssign;
 use std::ops::Shr;
@@ -59,41 +63,27 @@ pub trait FloatBitsType:
     + fmt::Display
     + FromPrimitive
     + ToPrimitive
+    + Into<BigInt>
 {
+    fn from_bigint(v: &BigInt) -> Option<Self>;
 }
 
-impl<T> FloatBitsType for T where
-    T: Unsigned
-        + Integer
-        + Clone
-        + NumAssign
-        + NumAssignRef
-        + NumRef
-        + Shl<usize, Output = Self>
-        + Shr<usize, Output = Self>
-        + ShlAssign<usize>
-        + ShrAssign<usize>
-        + BitAnd<Self, Output = Self>
-        + BitOr<Self, Output = Self>
-        + BitXor<Self, Output = Self>
-        + for<'a> BitAnd<&'a Self, Output = Self>
-        + for<'a> BitOr<&'a Self, Output = Self>
-        + for<'a> BitXor<&'a Self, Output = Self>
-        + BitAndAssign<Self>
-        + BitOrAssign<Self>
-        + BitXorAssign<Self>
-        + for<'a> BitAndAssign<&'a Self>
-        + for<'a> BitOrAssign<&'a Self>
-        + for<'a> BitXorAssign<&'a Self>
-        + fmt::UpperHex
-        + fmt::LowerHex
-        + fmt::Octal
-        + fmt::Binary
-        + fmt::Display
-        + FromPrimitive
-        + ToPrimitive
-{
+macro_rules! impl_float_bits_type {
+    ($t:ty, $cvt_from_bigint:ident) => {
+        impl FloatBitsType for $t {
+            fn from_bigint(v: &BigInt) -> Option<Self> {
+                v.$cvt_from_bigint()
+            }
+        }
+    };
 }
+
+impl_float_bits_type!(BigUint, to_biguint);
+impl_float_bits_type!(u8, to_u8);
+impl_float_bits_type!(u16, to_u16);
+impl_float_bits_type!(u32, to_u32);
+impl_float_bits_type!(u64, to_u64);
+impl_float_bits_type!(u128, to_u128);
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 #[repr(u32)]
@@ -133,12 +123,69 @@ pub struct FPState {
     pub status_flags: StatusFlags,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum FloatClass {
+    NegativeInfinity,
+    NegativeNormal,
+    NegativeSubnormal,
+    NegativeZero,
+    PositiveInfinity,
+    PositiveNormal,
+    PositiveSubnormal,
+    PositiveZero,
+    QuietNaN,
+    SignalingNaN,
+}
+
+impl Neg for FloatClass {
+    type Output = Self;
+    fn neg(self) -> Self {
+        use FloatClass::*;
+        match self {
+            NegativeInfinity => PositiveInfinity,
+            NegativeNormal => PositiveNormal,
+            NegativeSubnormal => PositiveSubnormal,
+            NegativeZero => PositiveZero,
+            PositiveInfinity => NegativeInfinity,
+            PositiveNormal => NegativeNormal,
+            PositiveSubnormal => NegativeSubnormal,
+            PositiveZero => NegativeZero,
+            QuietNaN => QuietNaN,
+            SignalingNaN => SignalingNaN,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum NaNFormat {
+    /// MSB of mantissa set to indicate quiet NaN
+    Standard,
+    /// MSB of mantissa clear to indicate quiet NaN; also used in PA-RISC
+    MIPSLegacy,
+}
+
+impl NaNFormat {
+    pub fn is_nan_quiet(self, mantissa_msb_set: bool) -> bool {
+        match self {
+            NaNFormat::Standard => mantissa_msb_set,
+            NaNFormat::MIPSLegacy => !mantissa_msb_set,
+        }
+    }
+}
+
+impl Default for NaNFormat {
+    fn default() -> NaNFormat {
+        NaNFormat::Standard
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FloatProperties {
     exponent_width: usize,
     mantissa_width: usize,
     has_implicit_leading_bit: bool,
     has_sign_bit: bool,
+    nan_format: NaNFormat,
 }
 
 impl FloatProperties {
@@ -148,12 +195,14 @@ impl FloatProperties {
         mantissa_width: usize,
         has_implicit_leading_bit: bool,
         has_sign_bit: bool,
+        nan_format: NaNFormat,
     ) -> Self {
         Self {
             exponent_width,
             mantissa_width,
             has_implicit_leading_bit,
             has_sign_bit,
+            nan_format,
         }
     }
     #[inline]
@@ -163,6 +212,7 @@ impl FloatProperties {
             mantissa_width,
             has_implicit_leading_bit: true,
             has_sign_bit: true,
+            nan_format: NaNFormat::Standard,
         }
     }
     /// `FloatProperties` for standard [__binary16__ format](https://en.wikipedia.org/wiki/Half-precision_floating-point_format)
@@ -225,6 +275,10 @@ impl FloatProperties {
         self.has_sign_bit
     }
     #[inline]
+    pub const fn nan_format(self) -> NaNFormat {
+        self.nan_format
+    }
+    #[inline]
     pub const fn width(self) -> usize {
         self.has_sign_bit as usize + self.exponent_width + self.mantissa_width
     }
@@ -253,6 +307,13 @@ impl FloatProperties {
     pub fn mantissa_field_mask<Bits: FloatBitsType>(self) -> Bits {
         (Bits::one() << self.mantissa_width) - Bits::one()
     }
+    #[inline]
+    pub const fn mantissa_field_msb_shift(self) -> usize {
+        self.mantissa_width - 1
+    }
+    pub fn mantissa_field_msb_mask<Bits: FloatBitsType>(self) -> Bits {
+        Bits::one() << self.mantissa_field_msb_shift()
+    }
     pub fn exponent_bias<Bits: FloatBitsType>(self) -> Bits {
         if self.exponent_width == 0 {
             Bits::zero()
@@ -265,6 +326,9 @@ impl FloatProperties {
     }
     pub fn exponent_zero_denormal<Bits: FloatBitsType>(self) -> Bits {
         Bits::zero()
+    }
+    pub fn exponent_min_normal<Bits: FloatBitsType>(self) -> Bits {
+        Bits::one()
     }
     pub fn overall_mask<Bits: FloatBitsType>(self) -> Bits {
         self.sign_field_mask::<Bits>()
@@ -290,6 +354,7 @@ impl fmt::Debug for FloatProperties {
                 .field("mantissa_width", &self.mantissa_width())
                 .field("has_implicit_leading_bit", &self.has_implicit_leading_bit())
                 .field("has_sign_bit", &self.has_sign_bit())
+                .field("nan_format", &self.nan_format())
                 .field("width", &self.width())
                 .field("fraction_width", &self.fraction_width())
                 .field("is_standard", &is_standard)
@@ -356,6 +421,12 @@ pub struct Float<FT: FloatTraits> {
     bits: FT::Bits,
 }
 
+impl<FT: FloatTraits + Default> Default for Float<FT> {
+    fn default() -> Self {
+        Self::positive_zero()
+    }
+}
+
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     fn check_bits(bits: Bits, traits: &FT) -> Bits {
         assert!(
@@ -370,11 +441,29 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             traits,
         }
     }
+    pub fn from_bits(bits: Bits) -> Self
+    where
+        FT: Default,
+    {
+        Self::from_bits_and_traits(bits, FT::default())
+    }
     pub fn bits(&self) -> &Bits {
         &self.bits
     }
-    pub fn assign_bits(&mut self, bits: Bits) {
+    pub fn set_bits(&mut self, bits: Bits) {
         self.bits = Self::check_bits(bits, &self.traits);
+    }
+    pub fn traits(&self) -> &FT {
+        &self.traits
+    }
+    pub fn into_bits_and_traits(self) -> (Bits, FT) {
+        (self.bits, self.traits)
+    }
+    pub fn into_bits(self) -> Bits {
+        self.bits
+    }
+    pub fn into_traits(self) -> FT {
+        self.traits
     }
     pub fn properties(&self) -> FloatProperties {
         self.traits.properties()
@@ -397,7 +486,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     fn or_bits(&mut self, bits: Bits) {
         BitOrAssign::<Bits>::bitor_assign(&mut self.bits, bits);
     }
-    fn clear_bits(&mut self, bits: Bits) {
+    fn and_not_bits(&mut self, bits: Bits) {
         BitOrAssign::<&Bits>::bitor_assign(&mut self.bits, &bits);
         self.xor_bits(bits)
     }
@@ -408,7 +497,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             return;
         }
         match sign {
-            Sign::Positive => self.clear_bits(properties.sign_field_mask()),
+            Sign::Positive => self.and_not_bits(properties.sign_field_mask()),
             Sign::Negative => self.or_bits(properties.sign_field_mask()),
         }
     }
@@ -429,7 +518,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             mask.clone() & &exponent == exponent,
             "exponent out of range"
         );
-        self.clear_bits(mask);
+        self.and_not_bits(mask);
         self.or_bits(exponent);
     }
     pub fn mantissa_field(&self) -> Bits {
@@ -444,14 +533,219 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             mask.clone() & &mantissa == mantissa,
             "mantissa out of range"
         );
-        self.clear_bits(mask);
+        self.and_not_bits(mask);
         self.or_bits(mantissa);
     }
-}
-
-impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits> + Default> Float<FT> {
-    pub fn from_bits(bits: Bits) -> Self {
-        Self::from_bits_and_traits(bits, FT::default())
+    pub fn mantissa_field_msb(&self) -> bool {
+        let properties = self.properties();
+        !(properties.mantissa_field_msb_mask::<Bits>() & &self.bits).is_zero()
+    }
+    pub fn set_mantissa_field_msb(&mut self, mantissa_msb: bool) {
+        let properties = self.properties();
+        if mantissa_msb {
+            self.or_bits(properties.mantissa_field_msb_mask());
+        } else {
+            self.and_not_bits(properties.mantissa_field_msb_mask());
+        }
+    }
+    pub fn class(&self) -> FloatClass {
+        let properties = self.properties();
+        let sign = self.sign();
+        let exponent_field = self.exponent_field();
+        let mantissa_field = self.mantissa_field();
+        let retval = if exponent_field == properties.exponent_zero_denormal() {
+            if mantissa_field.is_zero() {
+                FloatClass::PositiveZero
+            } else {
+                FloatClass::PositiveSubnormal
+            }
+        } else if exponent_field == properties.exponent_inf_nan() {
+            if mantissa_field.is_zero() {
+                FloatClass::PositiveInfinity
+            } else if properties
+                .nan_format()
+                .is_nan_quiet(self.mantissa_field_msb())
+            {
+                FloatClass::QuietNaN
+            } else {
+                FloatClass::SignalingNaN
+            }
+        } else {
+            FloatClass::PositiveNormal
+        };
+        match sign {
+            Sign::Positive => retval,
+            Sign::Negative => -retval,
+        }
+    }
+    pub fn is_zero(&self) -> bool {
+        match self.class() {
+            FloatClass::NegativeZero | FloatClass::PositiveZero => true,
+            _ => false,
+        }
+    }
+    pub fn is_positive_zero(&self) -> bool {
+        self.class() == FloatClass::PositiveZero
+    }
+    pub fn is_negative_zero(&self) -> bool {
+        self.class() == FloatClass::NegativeZero
+    }
+    pub fn is_finite(&self) -> bool {
+        match self.class() {
+            FloatClass::NegativeZero
+            | FloatClass::NegativeSubnormal
+            | FloatClass::NegativeNormal
+            | FloatClass::PositiveZero
+            | FloatClass::PositiveSubnormal
+            | FloatClass::PositiveNormal => true,
+            _ => false,
+        }
+    }
+    pub fn is_infinity(&self) -> bool {
+        match self.class() {
+            FloatClass::NegativeInfinity | FloatClass::PositiveInfinity => true,
+            _ => false,
+        }
+    }
+    pub fn is_nan(&self) -> bool {
+        match self.class() {
+            FloatClass::QuietNaN | FloatClass::SignalingNaN => true,
+            _ => false,
+        }
+    }
+    pub fn is_positive_infinity(&self) -> bool {
+        self.class() == FloatClass::PositiveInfinity
+    }
+    pub fn is_negative_infinity(&self) -> bool {
+        self.class() == FloatClass::NegativeInfinity
+    }
+    pub fn is_normal(&self) -> bool {
+        match self.class() {
+            FloatClass::NegativeNormal | FloatClass::PositiveNormal => true,
+            _ => false,
+        }
+    }
+    pub fn is_subnormal(&self) -> bool {
+        match self.class() {
+            FloatClass::NegativeSubnormal | FloatClass::PositiveSubnormal => true,
+            _ => false,
+        }
+    }
+    pub fn is_subnormal_or_zero(&self) -> bool {
+        match self.class() {
+            FloatClass::NegativeSubnormal
+            | FloatClass::PositiveSubnormal
+            | FloatClass::NegativeZero
+            | FloatClass::PositiveZero => true,
+            _ => false,
+        }
+    }
+    pub fn is_signaling_nan(&self) -> bool {
+        self.class() == FloatClass::SignalingNaN
+    }
+    pub fn is_quiet_nan(&self) -> bool {
+        self.class() == FloatClass::QuietNaN
+    }
+    pub fn to_ratio(&self) -> Option<Ratio<BigInt>> {
+        if !self.is_finite() {
+            return None;
+        }
+        let properties = self.properties();
+        let sign = self.sign();
+        let exponent_field = self.exponent_field();
+        let mantissa_field = self.mantissa_field();
+        let mut mantissa: BigInt = mantissa_field.into();
+        let mut exponent = exponent_field
+            .to_isize()
+            .expect("exponent_field doesn't fit in isize");
+        if self.is_subnormal_or_zero() {
+            exponent = properties
+                .exponent_min_normal::<Bits>()
+                .to_isize()
+                .expect("exponent_field doesn't fit in isize");
+        } else if properties.has_implicit_leading_bit() {
+            mantissa |= BigInt::one() << properties.fraction_width();
+        }
+        exponent -= properties
+            .exponent_bias::<Bits>()
+            .to_isize()
+            .expect("exponent bias doesn't fit in isize");
+        exponent -= properties
+            .fraction_width()
+            .to_isize()
+            .expect("fraction_width doesn't fit in isize");
+        let mut retval = if exponent.is_negative() {
+            let shift = (-exponent)
+                .to_usize()
+                .expect("exponent doesn't fit in usize");
+            Ratio::new(mantissa, BigInt::one() << shift)
+        } else {
+            Ratio::from(mantissa << exponent.to_usize().expect("exponent doesn't fit in usize"))
+        };
+        if sign == Sign::Negative {
+            retval = -retval;
+        }
+        Some(retval)
+    }
+    pub fn to_real_algebraic_number(&self) -> Option<RealAlgebraicNumber> {
+        self.to_ratio().map(Into::into)
+    }
+    pub fn positive_zero_with_traits(traits: FT) -> Self {
+        Self::from_bits_and_traits(Bits::zero(), traits)
+    }
+    pub fn positive_zero() -> Self
+    where
+        FT: Default,
+    {
+        Self::positive_zero_with_traits(FT::default())
+    }
+    pub fn negative_zero_with_traits(traits: FT) -> Self {
+        let properties = traits.properties();
+        assert!(properties.has_sign_bit());
+        let bits = properties.sign_field_mask::<Bits>();
+        Self::from_bits_and_traits(bits, traits)
+    }
+    pub fn negative_zero() -> Self
+    where
+        FT: Default,
+    {
+        Self::negative_zero_with_traits(FT::default())
+    }
+    pub fn signed_zero_with_traits(sign: Sign, traits: FT) -> Self {
+        match sign {
+            Sign::Positive => Self::positive_zero_with_traits(traits),
+            Sign::Negative => Self::negative_zero_with_traits(traits),
+        }
+    }
+    pub fn signed_zero(sign: Sign) -> Self
+    where
+        FT: Default,
+    {
+        Self::signed_zero_with_traits(sign, FT::default())
+    }
+    pub fn positive_infinity_with_traits(traits: FT) -> Self {
+        let properties = traits.properties();
+        let mut retval = Self::positive_zero_with_traits(traits);
+        retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
+        retval
+    }
+    pub fn positive_infinity() -> Self
+    where
+        FT: Default,
+    {
+        Self::positive_infinity_with_traits(FT::default())
+    }
+    pub fn negative_infinity_with_traits(traits: FT) -> Self {
+        let properties = traits.properties();
+        let mut retval = Self::negative_zero_with_traits(traits);
+        retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
+        retval
+    }
+    pub fn negative_infinity() -> Self
+    where
+        FT: Default,
+    {
+        Self::negative_infinity_with_traits(FT::default())
     }
 }
 
@@ -487,6 +781,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT>
                 width = (properties.mantissa_width() + 3) / 4
             ),
         );
+        debug_struct.field("class", &self.class());
         debug_struct.finish()
     }
 }
@@ -502,12 +797,83 @@ mod tests {
 
     #[test]
     fn test_debug() {
-        assert_eq!(&format!("{:?}", F16::from_bits(0x0000)), "Float { traits: F16Traits, bits: 0x0000, sign: Positive, exponent_field: 0x00, mantissa_field: 0x000 }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0x8000)), "Float { traits: F16Traits, bits: 0x8000, sign: Negative, exponent_field: 0x00, mantissa_field: 0x000 }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0xFC00)), "Float { traits: F16Traits, bits: 0xFC00, sign: Negative, exponent_field: 0x1F, mantissa_field: 0x000 }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0xFE00)), "Float { traits: F16Traits, bits: 0xFE00, sign: Negative, exponent_field: 0x1F, mantissa_field: 0x200 }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0x0001)), "Float { traits: F16Traits, bits: 0x0001, sign: Positive, exponent_field: 0x00, mantissa_field: 0x001 }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0x3C00)), "Float { traits: F16Traits, bits: 0x3C00, sign: Positive, exponent_field: 0x0F, mantissa_field: 0x000 }");
+        assert_eq!(&format!("{:?}", F16::from_bits(0x0000)), "Float { traits: F16Traits, bits: 0x0000, sign: Positive, exponent_field: 0x00, mantissa_field: 0x000, class: PositiveZero }");
+        assert_eq!(&format!("{:?}", F16::from_bits(0x8000)), "Float { traits: F16Traits, bits: 0x8000, sign: Negative, exponent_field: 0x00, mantissa_field: 0x000, class: NegativeZero }");
+        assert_eq!(&format!("{:?}", F16::from_bits(0xFC00)), "Float { traits: F16Traits, bits: 0xFC00, sign: Negative, exponent_field: 0x1F, mantissa_field: 0x000, class: NegativeInfinity }");
+        assert_eq!(&format!("{:?}", F16::from_bits(0xFE00)), "Float { traits: F16Traits, bits: 0xFE00, sign: Negative, exponent_field: 0x1F, mantissa_field: 0x200, class: QuietNaN }");
+        assert_eq!(&format!("{:?}", F16::from_bits(0x0001)), "Float { traits: F16Traits, bits: 0x0001, sign: Positive, exponent_field: 0x00, mantissa_field: 0x001, class: PositiveSubnormal }");
+        assert_eq!(&format!("{:?}", F16::from_bits(0x3C00)), "Float { traits: F16Traits, bits: 0x3C00, sign: Positive, exponent_field: 0x0F, mantissa_field: 0x000, class: PositiveNormal }");
+    }
+
+    #[test]
+    fn test_class() {
+        use FloatClass::*;
+        assert_eq!(F16::from_bits(0x0000).class(), PositiveZero);
+        assert_eq!(F16::from_bits(0x0001).class(), PositiveSubnormal);
+        assert_eq!(F16::from_bits(0x03FF).class(), PositiveSubnormal);
+        assert_eq!(F16::from_bits(0x0400).class(), PositiveNormal);
+        assert_eq!(F16::from_bits(0x3C00).class(), PositiveNormal);
+        assert_eq!(F16::from_bits(0x7BFF).class(), PositiveNormal);
+        assert_eq!(F16::from_bits(0x7C00).class(), PositiveInfinity);
+        assert_eq!(F16::from_bits(0x7C01).class(), SignalingNaN);
+        assert_eq!(F16::from_bits(0x7DFF).class(), SignalingNaN);
+        assert_eq!(F16::from_bits(0x7E00).class(), QuietNaN);
+        assert_eq!(F16::from_bits(0x7FFF).class(), QuietNaN);
+        assert_eq!(F16::from_bits(0x8000).class(), NegativeZero);
+        assert_eq!(F16::from_bits(0x8001).class(), NegativeSubnormal);
+        assert_eq!(F16::from_bits(0x83FF).class(), NegativeSubnormal);
+        assert_eq!(F16::from_bits(0x8400).class(), NegativeNormal);
+        assert_eq!(F16::from_bits(0xBC00).class(), NegativeNormal);
+        assert_eq!(F16::from_bits(0xFBFF).class(), NegativeNormal);
+        assert_eq!(F16::from_bits(0xFC00).class(), NegativeInfinity);
+        assert_eq!(F16::from_bits(0xFC01).class(), SignalingNaN);
+        assert_eq!(F16::from_bits(0xFDFF).class(), SignalingNaN);
+        assert_eq!(F16::from_bits(0xFE00).class(), QuietNaN);
+        assert_eq!(F16::from_bits(0xFFFF).class(), QuietNaN);
+    }
+
+    #[test]
+    fn test_to_ratio() {
+        macro_rules! test_case {
+            ($value:expr, $expected_ratio:expr) => {
+                let value: F16 = $value;
+                let expected_ratio: Option<Ratio<i128>> = $expected_ratio;
+                println!("value: {:?}", value);
+                println!("expected_ratio: {:?}", expected_ratio);
+                let ratio = value.to_ratio();
+                println!("ratio: {:?}", ratio.as_ref().map(ToString::to_string));
+                let expected_ratio = expected_ratio.map(|v| {
+                    let (n, d) = v.into();
+                    Ratio::new(n.into(), d.into())
+                });
+                assert!(ratio == expected_ratio);
+            };
+        }
+
+        let r = |n, d| Some(Ratio::new(n, d));
+
+        test_case!(F16::from_bits(0x0000), r(0, 1));
+        test_case!(F16::from_bits(0x0001), r(1, 1 << 24));
+        test_case!(F16::from_bits(0x03FF), r(1023, 1 << 24));
+        test_case!(F16::from_bits(0x0400), r(1, 1 << 14));
+        test_case!(F16::from_bits(0x3C00), r(1, 1));
+        test_case!(F16::from_bits(0x7BFF), r(65504, 1));
+        test_case!(F16::from_bits(0x7C00), None);
+        test_case!(F16::from_bits(0x7C01), None);
+        test_case!(F16::from_bits(0x7DFF), None);
+        test_case!(F16::from_bits(0x7E00), None);
+        test_case!(F16::from_bits(0x7FFF), None);
+        test_case!(F16::from_bits(0x8000), r(0, 1));
+        test_case!(F16::from_bits(0x8001), r(-1, 1 << 24));
+        test_case!(F16::from_bits(0x83FF), r(-1023, 1 << 24));
+        test_case!(F16::from_bits(0x8400), r(-1, 1 << 14));
+        test_case!(F16::from_bits(0xBC00), r(-1, 1));
+        test_case!(F16::from_bits(0xFBFF), r(-65504, 1));
+        test_case!(F16::from_bits(0xFC00), None);
+        test_case!(F16::from_bits(0xFC01), None);
+        test_case!(F16::from_bits(0xFDFF), None);
+        test_case!(F16::from_bits(0xFE00), None);
+        test_case!(F16::from_bits(0xFFFF), None);
     }
 
     // FIXME: add more tests
