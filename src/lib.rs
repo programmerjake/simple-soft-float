@@ -13,6 +13,7 @@ use num_traits::NumAssignRef;
 use num_traits::NumRef;
 use num_traits::ToPrimitive;
 use num_traits::Unsigned;
+use std::cmp::Ordering;
 use std::fmt;
 use std::ops::BitAnd;
 use std::ops::BitAndAssign;
@@ -307,6 +308,9 @@ impl FloatProperties {
     pub fn mantissa_field_mask<Bits: FloatBitsType>(self) -> Bits {
         (Bits::one() << self.mantissa_width) - Bits::one()
     }
+    pub fn mantissa_field_max<Bits: FloatBitsType>(self) -> Bits {
+        (Bits::one() << self.mantissa_width) - Bits::one()
+    }
     #[inline]
     pub const fn mantissa_field_msb_shift(self) -> usize {
         self.mantissa_width - 1
@@ -324,11 +328,14 @@ impl FloatProperties {
     pub fn exponent_inf_nan<Bits: FloatBitsType>(self) -> Bits {
         (Bits::one() << self.exponent_width) - Bits::one()
     }
-    pub fn exponent_zero_denormal<Bits: FloatBitsType>(self) -> Bits {
+    pub fn exponent_zero_subnormal<Bits: FloatBitsType>(self) -> Bits {
         Bits::zero()
     }
     pub fn exponent_min_normal<Bits: FloatBitsType>(self) -> Bits {
         Bits::one()
+    }
+    pub fn exponent_max_normal<Bits: FloatBitsType>(self) -> Bits {
+        self.exponent_inf_nan::<Bits>() - Bits::one()
     }
     pub fn overall_mask<Bits: FloatBitsType>(self) -> Bits {
         self.sign_field_mask::<Bits>()
@@ -553,7 +560,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let sign = self.sign();
         let exponent_field = self.exponent_field();
         let mantissa_field = self.mantissa_field();
-        let retval = if exponent_field == properties.exponent_zero_denormal() {
+        let retval = if exponent_field == properties.exponent_zero_subnormal() {
             if mantissa_field.is_zero() {
                 FloatClass::PositiveZero
             } else {
@@ -656,24 +663,24 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let mantissa_field = self.mantissa_field();
         let mut mantissa: BigInt = mantissa_field.into();
         let mut exponent = exponent_field
-            .to_isize()
-            .expect("exponent_field doesn't fit in isize");
+            .to_i64()
+            .expect("exponent_field doesn't fit in i64");
         if self.is_subnormal_or_zero() {
             exponent = properties
                 .exponent_min_normal::<Bits>()
-                .to_isize()
-                .expect("exponent_field doesn't fit in isize");
+                .to_i64()
+                .expect("exponent_field doesn't fit in i64");
         } else if properties.has_implicit_leading_bit() {
             mantissa |= BigInt::one() << properties.fraction_width();
         }
         exponent -= properties
             .exponent_bias::<Bits>()
-            .to_isize()
-            .expect("exponent bias doesn't fit in isize");
+            .to_i64()
+            .expect("exponent bias doesn't fit in i64");
         exponent -= properties
             .fraction_width()
-            .to_isize()
-            .expect("fraction_width doesn't fit in isize");
+            .to_i64()
+            .expect("fraction_width doesn't fit in i64");
         let mut retval = if exponent.is_negative() {
             let shift = (-exponent)
                 .to_usize()
@@ -746,6 +753,237 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         FT: Default,
     {
         Self::negative_infinity_with_traits(FT::default())
+    }
+    pub fn signed_infinity_with_traits(sign: Sign, traits: FT) -> Self {
+        match sign {
+            Sign::Positive => Self::positive_infinity_with_traits(traits),
+            Sign::Negative => Self::negative_infinity_with_traits(traits),
+        }
+    }
+    pub fn signed_infinity(sign: Sign) -> Self
+    where
+        FT: Default,
+    {
+        Self::signed_infinity_with_traits(sign, FT::default())
+    }
+    pub fn quiet_nan_with_traits(traits: FT) -> Self {
+        let properties = traits.properties();
+        let mut retval = Self::positive_zero_with_traits(traits);
+        retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
+        match properties.nan_format() {
+            NaNFormat::Standard => retval.set_mantissa_field_msb(true),
+            NaNFormat::MIPSLegacy => {
+                retval.set_mantissa_field(properties.mantissa_field_max());
+                retval.set_mantissa_field_msb(false);
+            }
+        }
+        retval
+    }
+    pub fn quiet_nan() -> Self
+    where
+        FT: Default,
+    {
+        Self::quiet_nan_with_traits(FT::default())
+    }
+    pub fn signaling_nan_with_traits(traits: FT) -> Self {
+        let properties = traits.properties();
+        let mut retval = Self::positive_zero_with_traits(traits);
+        retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
+        match properties.nan_format() {
+            NaNFormat::Standard => retval.set_mantissa_field(Bits::one()),
+            NaNFormat::MIPSLegacy => retval.set_mantissa_field_msb(true),
+        }
+        retval
+    }
+    pub fn signaling_nan() -> Self
+    where
+        FT: Default,
+    {
+        Self::signaling_nan_with_traits(FT::default())
+    }
+    pub fn into_quiet_nan(mut self) -> Self {
+        let properties = self.properties();
+        self.set_exponent_field(properties.exponent_inf_nan::<Bits>());
+        match properties.nan_format() {
+            NaNFormat::Standard => self.set_mantissa_field_msb(true),
+            NaNFormat::MIPSLegacy => return Self::quiet_nan_with_traits(self.traits),
+        }
+        self
+    }
+    pub fn to_quiet_nan(&self) -> Self {
+        self.clone().into_quiet_nan()
+    }
+    pub fn signed_max_normal_with_traits(sign: Sign, traits: FT) -> Self {
+        let properties = traits.properties();
+        let mut retval = Self::signed_zero_with_traits(sign, traits);
+        retval.set_mantissa_field(properties.mantissa_field_max());
+        retval.set_exponent_field(properties.exponent_max_normal());
+        retval
+    }
+    pub fn signed_max_normal(sign: Sign) -> Self
+    where
+        FT: Default,
+    {
+        Self::signed_max_normal_with_traits(sign, FT::default())
+    }
+    pub fn from_real_algebraic_number_with_traits(
+        value: &RealAlgebraicNumber,
+        rounding_mode: RoundingMode,
+        traits: FT,
+    ) -> Self {
+        let properties = traits.properties();
+        let sign = if value.is_positive() {
+            Sign::Positive
+        } else if !properties.has_sign_bit() {
+            return Self::positive_zero_with_traits(traits);
+        } else {
+            Sign::Negative
+        };
+        let value = value.abs();
+        let exponent = if let Some(v) = value.checked_floor_log2() {
+            v
+        } else {
+            return Self::positive_zero_with_traits(traits);
+        };
+        let exponent_bias = properties.exponent_bias::<Bits>();
+        let exponent_bias_i64 = exponent_bias
+            .to_i64()
+            .expect("exponent_bias doesn't fit in i64");
+        let exponent_max = properties
+            .exponent_max_normal::<Bits>()
+            .to_i64()
+            .expect("exponent_max_normal doesn't fit in i64")
+            - exponent_bias_i64;
+        if exponent > exponent_max {
+            match (rounding_mode, sign) {
+                (RoundingMode::TowardNegative, Sign::Positive)
+                | (RoundingMode::TowardPositive, Sign::Negative)
+                | (RoundingMode::TowardZero, _) => {
+                    return Self::signed_max_normal_with_traits(sign, traits);
+                }
+                (RoundingMode::TowardNegative, Sign::Negative)
+                | (RoundingMode::TowardPositive, Sign::Positive)
+                | (RoundingMode::TiesToEven, _)
+                | (RoundingMode::TiesToAway, _) => {
+                    return Self::signed_infinity_with_traits(sign, traits);
+                }
+            }
+        }
+        let exponent_min = properties
+            .exponent_min_normal::<Bits>()
+            .to_i64()
+            .expect("exponent_min_normal doesn't fit in i64")
+            - exponent_bias_i64;
+        let exponent = exponent.max(exponent_min);
+        let ulp_shift = exponent
+            - properties
+                .fraction_width()
+                .to_i64()
+                .expect("fraction_width doesn't fit in i64");
+        let ulp = if ulp_shift < 0 {
+            let shift = (-ulp_shift)
+                .to_usize()
+                .expect("ulp_shift doesn't fit in usize");
+            Ratio::new(BigInt::one(), BigInt::one() << shift)
+        } else {
+            Ratio::from(
+                BigInt::one() << ulp_shift.to_usize().expect("exponent doesn't fit in usize"),
+            )
+        };
+        let value_in_ulps = value / RealAlgebraicNumber::from(ulp);
+        let lower_float_exponent = exponent;
+        let lower_float_mantissa = value_in_ulps.to_integer_floor();
+        let remainder_in_ulps =
+            value_in_ulps - RealAlgebraicNumber::from(lower_float_mantissa.clone());
+        let mut max_mantissa: BigInt = properties.mantissa_field_max::<Bits>().into();
+        let min_normal_mantissa = BigInt::one() << properties.fraction_width();
+        max_mantissa |= &min_normal_mantissa;
+        assert!(!lower_float_mantissa.is_negative());
+        assert!(lower_float_mantissa <= max_mantissa);
+        let retval_exponent;
+        let mut retval_mantissa;
+        if remainder_in_ulps.is_zero() {
+            retval_exponent = lower_float_exponent;
+            retval_mantissa = lower_float_mantissa;
+        } else {
+            let mut upper_float_mantissa = &lower_float_mantissa + 1i32;
+            let mut upper_float_exponent = lower_float_exponent;
+            if upper_float_mantissa > max_mantissa {
+                upper_float_mantissa >>= 1;
+                upper_float_exponent += 1;
+            }
+            match (rounding_mode, sign) {
+                (RoundingMode::TiesToEven, _) | (RoundingMode::TiesToAway, _) => {
+                    match remainder_in_ulps.cmp(&RealAlgebraicNumber::from(Ratio::new(1, 2))) {
+                        Ordering::Less => {
+                            retval_exponent = lower_float_exponent;
+                            retval_mantissa = lower_float_mantissa;
+                        }
+                        Ordering::Equal => {
+                            if rounding_mode == RoundingMode::TiesToAway
+                                || lower_float_mantissa.is_odd()
+                            {
+                                retval_exponent = upper_float_exponent;
+                                retval_mantissa = upper_float_mantissa;
+                            } else {
+                                retval_exponent = lower_float_exponent;
+                                retval_mantissa = lower_float_mantissa;
+                            }
+                        }
+                        Ordering::Greater => {
+                            retval_exponent = upper_float_exponent;
+                            retval_mantissa = upper_float_mantissa;
+                        }
+                    }
+                }
+                (RoundingMode::TowardZero, _) => {
+                    retval_exponent = lower_float_exponent;
+                    retval_mantissa = lower_float_mantissa;
+                }
+                (RoundingMode::TowardNegative, Sign::Negative)
+                | (RoundingMode::TowardPositive, Sign::Positive) => {
+                    retval_exponent = upper_float_exponent;
+                    retval_mantissa = upper_float_mantissa;
+                }
+                (RoundingMode::TowardNegative, Sign::Positive)
+                | (RoundingMode::TowardPositive, Sign::Negative) => {
+                    retval_exponent = lower_float_exponent;
+                    retval_mantissa = lower_float_mantissa;
+                }
+            }
+        }
+        if retval_exponent > exponent_max {
+            return Self::signed_infinity_with_traits(sign, traits);
+        }
+        let mut retval = Self::signed_zero_with_traits(sign, traits);
+        if retval_mantissa < min_normal_mantissa {
+            assert_eq!(retval_exponent, exponent_min);
+            retval.set_exponent_field(properties.exponent_zero_subnormal());
+            retval.set_mantissa_field(
+                Bits::from_bigint(&retval_mantissa).expect("retval_mantissa doesn't fit in Bits"),
+            );
+        } else {
+            if properties.has_implicit_leading_bit() {
+                retval_mantissa &= !&min_normal_mantissa;
+                assert!(retval_mantissa < min_normal_mantissa);
+            }
+            let exponent_field = Bits::from_i64(retval_exponent + exponent_bias_i64)
+                .expect("exponent doesn't fit in Bits");
+            retval.set_exponent_field(exponent_field);
+            retval.set_mantissa_field(
+                Bits::from_bigint(&retval_mantissa).expect("retval_mantissa doesn't fit in Bits"),
+            );
+        }
+        retval
+    }
+    pub fn from_real_algebraic_number(
+        value: &RealAlgebraicNumber,
+        rounding_mode: RoundingMode,
+    ) -> Self
+    where
+        FT: Default,
+    {
+        Self::from_real_algebraic_number_with_traits(value, rounding_mode, FT::default())
     }
 }
 
@@ -874,6 +1112,221 @@ mod tests {
         test_case!(F16::from_bits(0xFDFF), None);
         test_case!(F16::from_bits(0xFE00), None);
         test_case!(F16::from_bits(0xFFFF), None);
+    }
+
+    #[test]
+    fn test_from_real_algebraic_number() {
+        fn test_case(
+            n: i32,
+            d: i32,
+            expected_float_ties_to_even: u16,
+            expected_float_ties_to_away: u16,
+            expected_float_toward_positive: u16,
+            expected_float_toward_negative: u16,
+            expected_float_toward_zero: u16,
+        ) {
+            println!(
+                "value: {}{:#X}/{:#X}",
+                if n < 0 { "-" } else { "" },
+                n.abs(),
+                d
+            );
+            let value = RealAlgebraicNumber::from(Ratio::new(n, d));
+            let expected_float_ties_to_even = F16::from_bits(expected_float_ties_to_even);
+            let expected_float_ties_to_away = F16::from_bits(expected_float_ties_to_away);
+            let expected_float_toward_positive = F16::from_bits(expected_float_toward_positive);
+            let expected_float_toward_negative = F16::from_bits(expected_float_toward_negative);
+            let expected_float_toward_zero = F16::from_bits(expected_float_toward_zero);
+            println!(
+                "expected_float_ties_to_even: {:?}",
+                expected_float_ties_to_even
+            );
+            println!(
+                "expected_float_ties_to_away: {:?}",
+                expected_float_ties_to_away
+            );
+            println!(
+                "expected_float_toward_positive: {:?}",
+                expected_float_toward_positive
+            );
+            println!(
+                "expected_float_toward_negative: {:?}",
+                expected_float_toward_negative
+            );
+            println!(
+                "expected_float_toward_zero: {:?}",
+                expected_float_toward_zero
+            );
+            let float_ties_to_even =
+                F16::from_real_algebraic_number(&value, RoundingMode::TiesToEven);
+            println!("float_ties_to_even: {:?}", float_ties_to_even);
+            assert!(expected_float_ties_to_even.bits() == float_ties_to_even.bits());
+            let float_ties_to_away =
+                F16::from_real_algebraic_number(&value, RoundingMode::TiesToAway);
+            println!("float_ties_to_away: {:?}", float_ties_to_away);
+            assert!(expected_float_ties_to_away.bits() == float_ties_to_away.bits());
+            let float_toward_positive =
+                F16::from_real_algebraic_number(&value, RoundingMode::TowardPositive);
+            println!("float_toward_positive: {:?}", float_toward_positive);
+            assert!(expected_float_toward_positive.bits() == float_toward_positive.bits());
+            let float_toward_negative =
+                F16::from_real_algebraic_number(&value, RoundingMode::TowardNegative);
+            println!("float_toward_negative: {:?}", float_toward_negative);
+            assert!(expected_float_toward_negative.bits() == float_toward_negative.bits());
+            let float_toward_zero =
+                F16::from_real_algebraic_number(&value, RoundingMode::TowardZero);
+            println!("float_toward_zero: {:?}", float_toward_zero);
+            assert!(expected_float_toward_zero.bits() == float_toward_zero.bits());
+        }
+
+        // test the values right around zero
+        test_case(-16, 1 << 26, 0x8004, 0x8004, 0x8004, 0x8004, 0x8004);
+        test_case(-15, 1 << 26, 0x8004, 0x8004, 0x8003, 0x8004, 0x8003);
+        test_case(-14, 1 << 26, 0x8004, 0x8004, 0x8003, 0x8004, 0x8003);
+        test_case(-13, 1 << 26, 0x8003, 0x8003, 0x8003, 0x8004, 0x8003);
+        test_case(-12, 1 << 26, 0x8003, 0x8003, 0x8003, 0x8003, 0x8003);
+        test_case(-11, 1 << 26, 0x8003, 0x8003, 0x8002, 0x8003, 0x8002);
+        test_case(-10, 1 << 26, 0x8002, 0x8003, 0x8002, 0x8003, 0x8002);
+        test_case(-9, 1 << 26, 0x8002, 0x8002, 0x8002, 0x8003, 0x8002);
+        test_case(-8, 1 << 26, 0x8002, 0x8002, 0x8002, 0x8002, 0x8002);
+        test_case(-7, 1 << 26, 0x8002, 0x8002, 0x8001, 0x8002, 0x8001);
+        test_case(-6, 1 << 26, 0x8002, 0x8002, 0x8001, 0x8002, 0x8001);
+        test_case(-5, 1 << 26, 0x8001, 0x8001, 0x8001, 0x8002, 0x8001);
+        test_case(-4, 1 << 26, 0x8001, 0x8001, 0x8001, 0x8001, 0x8001);
+        test_case(-3, 1 << 26, 0x8001, 0x8001, 0x8000, 0x8001, 0x8000);
+        test_case(-2, 1 << 26, 0x8000, 0x8001, 0x8000, 0x8001, 0x8000);
+        test_case(-1, 1 << 26, 0x8000, 0x8000, 0x8000, 0x8001, 0x8000);
+        test_case(0, 1 << 26, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000);
+        test_case(1, 1 << 26, 0x0000, 0x0000, 0x0001, 0x0000, 0x0000);
+        test_case(2, 1 << 26, 0x0000, 0x0001, 0x0001, 0x0000, 0x0000);
+        test_case(3, 1 << 26, 0x0001, 0x0001, 0x0001, 0x0000, 0x0000);
+        test_case(4, 1 << 26, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001);
+        test_case(5, 1 << 26, 0x0001, 0x0001, 0x0002, 0x0001, 0x0001);
+        test_case(6, 1 << 26, 0x0002, 0x0002, 0x0002, 0x0001, 0x0001);
+        test_case(7, 1 << 26, 0x0002, 0x0002, 0x0002, 0x0001, 0x0001);
+        test_case(8, 1 << 26, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002);
+        test_case(9, 1 << 26, 0x0002, 0x0002, 0x0003, 0x0002, 0x0002);
+        test_case(10, 1 << 26, 0x0002, 0x0003, 0x0003, 0x0002, 0x0002);
+        test_case(11, 1 << 26, 0x0003, 0x0003, 0x0003, 0x0002, 0x0002);
+        test_case(12, 1 << 26, 0x0003, 0x0003, 0x0003, 0x0003, 0x0003);
+        test_case(13, 1 << 26, 0x0003, 0x0003, 0x0004, 0x0003, 0x0003);
+        test_case(14, 1 << 26, 0x0004, 0x0004, 0x0004, 0x0003, 0x0003);
+        test_case(15, 1 << 26, 0x0004, 0x0004, 0x0004, 0x0003, 0x0003);
+        test_case(16, 1 << 26, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004);
+
+        // test the values at the transition between subnormal and normal
+        test_case(-0x3FE0, 1 << 28, 0x83FE, 0x83FE, 0x83FE, 0x83FE, 0x83FE);
+        test_case(-0x3FE4, 1 << 28, 0x83FE, 0x83FE, 0x83FE, 0x83FF, 0x83FE);
+        test_case(-0x3FE8, 1 << 28, 0x83FE, 0x83FF, 0x83FE, 0x83FF, 0x83FE);
+        test_case(-0x3FEC, 1 << 28, 0x83FF, 0x83FF, 0x83FE, 0x83FF, 0x83FE);
+        test_case(-0x3FF0, 1 << 28, 0x83FF, 0x83FF, 0x83FF, 0x83FF, 0x83FF);
+        test_case(-0x3FF4, 1 << 28, 0x83FF, 0x83FF, 0x83FF, 0x8400, 0x83FF);
+        test_case(-0x3FF8, 1 << 28, 0x8400, 0x8400, 0x83FF, 0x8400, 0x83FF);
+        test_case(-0x3FFC, 1 << 28, 0x8400, 0x8400, 0x83FF, 0x8400, 0x83FF);
+        test_case(-0x4000, 1 << 28, 0x8400, 0x8400, 0x8400, 0x8400, 0x8400);
+        test_case(-0x4004, 1 << 28, 0x8400, 0x8400, 0x8400, 0x8401, 0x8400);
+        test_case(-0x4008, 1 << 28, 0x8400, 0x8401, 0x8400, 0x8401, 0x8400);
+        test_case(-0x400C, 1 << 28, 0x8401, 0x8401, 0x8400, 0x8401, 0x8400);
+        test_case(-0x4010, 1 << 28, 0x8401, 0x8401, 0x8401, 0x8401, 0x8401);
+        test_case(-0x4014, 1 << 28, 0x8401, 0x8401, 0x8401, 0x8402, 0x8401);
+        test_case(-0x4018, 1 << 28, 0x8402, 0x8402, 0x8401, 0x8402, 0x8401);
+        test_case(-0x401C, 1 << 28, 0x8402, 0x8402, 0x8401, 0x8402, 0x8401);
+        test_case(-0x4020, 1 << 28, 0x8402, 0x8402, 0x8402, 0x8402, 0x8402);
+        test_case(0x3FE0, 1 << 28, 0x03FE, 0x03FE, 0x03FE, 0x03FE, 0x03FE);
+        test_case(0x3FE4, 1 << 28, 0x03FE, 0x03FE, 0x03FF, 0x03FE, 0x03FE);
+        test_case(0x3FE8, 1 << 28, 0x03FE, 0x03FF, 0x03FF, 0x03FE, 0x03FE);
+        test_case(0x3FEC, 1 << 28, 0x03FF, 0x03FF, 0x03FF, 0x03FE, 0x03FE);
+        test_case(0x3FF0, 1 << 28, 0x03FF, 0x03FF, 0x03FF, 0x03FF, 0x03FF);
+        test_case(0x3FF4, 1 << 28, 0x03FF, 0x03FF, 0x0400, 0x03FF, 0x03FF);
+        test_case(0x3FF8, 1 << 28, 0x0400, 0x0400, 0x0400, 0x03FF, 0x03FF);
+        test_case(0x3FFC, 1 << 28, 0x0400, 0x0400, 0x0400, 0x03FF, 0x03FF);
+        test_case(0x4000, 1 << 28, 0x0400, 0x0400, 0x0400, 0x0400, 0x0400);
+        test_case(0x4004, 1 << 28, 0x0400, 0x0400, 0x0401, 0x0400, 0x0400);
+        test_case(0x4008, 1 << 28, 0x0400, 0x0401, 0x0401, 0x0400, 0x0400);
+        test_case(0x400C, 1 << 28, 0x0401, 0x0401, 0x0401, 0x0400, 0x0400);
+        test_case(0x4010, 1 << 28, 0x0401, 0x0401, 0x0401, 0x0401, 0x0401);
+        test_case(0x4014, 1 << 28, 0x0401, 0x0401, 0x0402, 0x0401, 0x0401);
+        test_case(0x4018, 1 << 28, 0x0402, 0x0402, 0x0402, 0x0401, 0x0401);
+        test_case(0x401C, 1 << 28, 0x0402, 0x0402, 0x0402, 0x0401, 0x0401);
+        test_case(0x4020, 1 << 28, 0x0402, 0x0402, 0x0402, 0x0402, 0x0402);
+
+        test_case(0x7FF, 1 << 20, 0x17FF, 0x17FF, 0x17FF, 0x17FF, 0x17FF);
+
+        // test the values right around 1 and -1
+        test_case(-0x3FE0, 1 << 14, 0xBBFC, 0xBBFC, 0xBBFC, 0xBBFC, 0xBBFC);
+        test_case(-0x3FE4, 1 << 14, 0xBBFC, 0xBBFD, 0xBBFC, 0xBBFD, 0xBBFC);
+        test_case(-0x3FE8, 1 << 14, 0xBBFD, 0xBBFD, 0xBBFD, 0xBBFD, 0xBBFD);
+        test_case(-0x3FEC, 1 << 14, 0xBBFE, 0xBBFE, 0xBBFD, 0xBBFE, 0xBBFD);
+        test_case(-0x3FF0, 1 << 14, 0xBBFE, 0xBBFE, 0xBBFE, 0xBBFE, 0xBBFE);
+        test_case(-0x3FF4, 1 << 14, 0xBBFE, 0xBBFF, 0xBBFE, 0xBBFF, 0xBBFE);
+        test_case(-0x3FF8, 1 << 14, 0xBBFF, 0xBBFF, 0xBBFF, 0xBBFF, 0xBBFF);
+        test_case(-0x3FFC, 1 << 14, 0xBC00, 0xBC00, 0xBBFF, 0xBC00, 0xBBFF);
+        test_case(-0x4000, 1 << 14, 0xBC00, 0xBC00, 0xBC00, 0xBC00, 0xBC00);
+        test_case(-0x4004, 1 << 14, 0xBC00, 0xBC00, 0xBC00, 0xBC01, 0xBC00);
+        test_case(-0x4008, 1 << 14, 0xBC00, 0xBC01, 0xBC00, 0xBC01, 0xBC00);
+        test_case(-0x400C, 1 << 14, 0xBC01, 0xBC01, 0xBC00, 0xBC01, 0xBC00);
+        test_case(-0x4010, 1 << 14, 0xBC01, 0xBC01, 0xBC01, 0xBC01, 0xBC01);
+        test_case(-0x4014, 1 << 14, 0xBC01, 0xBC01, 0xBC01, 0xBC02, 0xBC01);
+        test_case(-0x4018, 1 << 14, 0xBC02, 0xBC02, 0xBC01, 0xBC02, 0xBC01);
+        test_case(-0x401C, 1 << 14, 0xBC02, 0xBC02, 0xBC01, 0xBC02, 0xBC01);
+        test_case(-0x4020, 1 << 14, 0xBC02, 0xBC02, 0xBC02, 0xBC02, 0xBC02);
+        test_case(0x3FE0, 1 << 14, 0x3BFC, 0x3BFC, 0x3BFC, 0x3BFC, 0x3BFC);
+        test_case(0x3FE4, 1 << 14, 0x3BFC, 0x3BFD, 0x3BFD, 0x3BFC, 0x3BFC);
+        test_case(0x3FE8, 1 << 14, 0x3BFD, 0x3BFD, 0x3BFD, 0x3BFD, 0x3BFD);
+        test_case(0x3FEC, 1 << 14, 0x3BFE, 0x3BFE, 0x3BFE, 0x3BFD, 0x3BFD);
+        test_case(0x3FF0, 1 << 14, 0x3BFE, 0x3BFE, 0x3BFE, 0x3BFE, 0x3BFE);
+        test_case(0x3FF4, 1 << 14, 0x3BFE, 0x3BFF, 0x3BFF, 0x3BFE, 0x3BFE);
+        test_case(0x3FF8, 1 << 14, 0x3BFF, 0x3BFF, 0x3BFF, 0x3BFF, 0x3BFF);
+        test_case(0x3FFC, 1 << 14, 0x3C00, 0x3C00, 0x3C00, 0x3BFF, 0x3BFF);
+        test_case(0x4000, 1 << 14, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00);
+        test_case(0x4004, 1 << 14, 0x3C00, 0x3C00, 0x3C01, 0x3C00, 0x3C00);
+        test_case(0x4008, 1 << 14, 0x3C00, 0x3C01, 0x3C01, 0x3C00, 0x3C00);
+        test_case(0x400C, 1 << 14, 0x3C01, 0x3C01, 0x3C01, 0x3C00, 0x3C00);
+        test_case(0x4010, 1 << 14, 0x3C01, 0x3C01, 0x3C01, 0x3C01, 0x3C01);
+        test_case(0x4014, 1 << 14, 0x3C01, 0x3C01, 0x3C02, 0x3C01, 0x3C01);
+        test_case(0x4018, 1 << 14, 0x3C02, 0x3C02, 0x3C02, 0x3C01, 0x3C01);
+        test_case(0x401C, 1 << 14, 0x3C02, 0x3C02, 0x3C02, 0x3C01, 0x3C01);
+        test_case(0x4020, 1 << 14, 0x3C02, 0x3C02, 0x3C02, 0x3C02, 0x3C02);
+
+        // test values right around the max normal
+        test_case(-0x3FF00, 1 << 2, 0xFBFE, 0xFBFE, 0xFBFE, 0xFBFE, 0xFBFE);
+        test_case(-0x3FF20, 1 << 2, 0xFBFE, 0xFBFE, 0xFBFE, 0xFBFF, 0xFBFE);
+        test_case(-0x3FF40, 1 << 2, 0xFBFE, 0xFBFF, 0xFBFE, 0xFBFF, 0xFBFE);
+        test_case(-0x3FF60, 1 << 2, 0xFBFF, 0xFBFF, 0xFBFE, 0xFBFF, 0xFBFE);
+        test_case(-0x3FF80, 1 << 2, 0xFBFF, 0xFBFF, 0xFBFF, 0xFBFF, 0xFBFF);
+        test_case(-0x3FFA0, 1 << 2, 0xFBFF, 0xFBFF, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x3FFC0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x3FFE0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x40000, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x40020, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x40040, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x40060, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x40080, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x400A0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x400C0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x400E0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(-0x40100, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
+        test_case(0x3FF00, 1 << 2, 0x7BFE, 0x7BFE, 0x7BFE, 0x7BFE, 0x7BFE);
+        test_case(0x3FF20, 1 << 2, 0x7BFE, 0x7BFE, 0x7BFF, 0x7BFE, 0x7BFE);
+        test_case(0x3FF40, 1 << 2, 0x7BFE, 0x7BFF, 0x7BFF, 0x7BFE, 0x7BFE);
+        test_case(0x3FF60, 1 << 2, 0x7BFF, 0x7BFF, 0x7BFF, 0x7BFE, 0x7BFE);
+        test_case(0x3FF80, 1 << 2, 0x7BFF, 0x7BFF, 0x7BFF, 0x7BFF, 0x7BFF);
+        test_case(0x3FFA0, 1 << 2, 0x7BFF, 0x7BFF, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x3FFC0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x3FFE0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x40000, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x40020, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x40040, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x40060, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x40080, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x400A0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x400C0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x400E0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(0x40100, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+
+        // test values much larger than the max normal
+        test_case(0x1 << 20, 1, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
+        test_case(-0x1 << 20, 1, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
     }
 
     // FIXME: add more tests
