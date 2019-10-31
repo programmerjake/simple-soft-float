@@ -27,6 +27,8 @@ use std::ops::ShlAssign;
 use std::ops::Shr;
 use std::ops::ShrAssign;
 
+mod from_real_algebraic_number_test_cases;
+
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 #[repr(u8)]
 pub enum Sign {
@@ -118,10 +120,38 @@ impl Default for StatusFlags {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum ExceptionHandlingMode {
+    DefaultIgnoreExactUnderflow,
+    DefaultSignalExactUnderflow,
+}
+
+impl Default for ExceptionHandlingMode {
+    fn default() -> ExceptionHandlingMode {
+        ExceptionHandlingMode::DefaultIgnoreExactUnderflow
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum TininessDetectionMode {
+    BeforeRounding,
+    AfterRounding,
+}
+
+impl Default for TininessDetectionMode {
+    fn default() -> TininessDetectionMode {
+        TininessDetectionMode::AfterRounding
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
 pub struct FPState {
     pub rounding_mode: RoundingMode,
     pub status_flags: StatusFlags,
+    pub exception_handling_mode: ExceptionHandlingMode,
+    pub tininess_detection_mode: TininessDetectionMode,
+    // FIXME: switch to using #[non_exhaustive] once on stable (rustc 1.40)
+    _non_exhaustive: (),
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
@@ -158,25 +188,114 @@ impl Neg for FloatClass {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum NaNFormat {
+pub enum QuietNaNFormat {
     /// MSB of mantissa set to indicate quiet NaN
     Standard,
     /// MSB of mantissa clear to indicate quiet NaN; also used in PA-RISC
     MIPSLegacy,
 }
 
-impl NaNFormat {
+impl QuietNaNFormat {
     pub fn is_nan_quiet(self, mantissa_msb_set: bool) -> bool {
         match self {
-            NaNFormat::Standard => mantissa_msb_set,
-            NaNFormat::MIPSLegacy => !mantissa_msb_set,
+            QuietNaNFormat::Standard => mantissa_msb_set,
+            QuietNaNFormat::MIPSLegacy => !mantissa_msb_set,
         }
     }
 }
 
-impl Default for NaNFormat {
-    fn default() -> NaNFormat {
-        NaNFormat::Standard
+impl Default for QuietNaNFormat {
+    fn default() -> QuietNaNFormat {
+        QuietNaNFormat::Standard
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct NaNType {
+    pub canonical_nan_sign: Sign,
+    pub canonical_nan_mantissa_msb: bool,
+    pub canonical_nan_mantissa_second_to_msb: bool,
+    pub canonical_nan_mantissa_rest: bool,
+}
+
+impl Default for NaNType {
+    fn default() -> NaNType {
+        NaNType::default()
+    }
+}
+
+impl fmt::Debug for NaNType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if *self == NaNType::RISC_V {
+            f.write_str("NaNType::RISC_V")
+        } else if *self == NaNType::X86 {
+            f.write_str("NaNType::X86")
+        } else if *self == NaNType::SPARC {
+            f.write_str("NaNType::SPARC")
+        } else if *self == NaNType::HPPA {
+            f.write_str("NaNType::HPPA")
+        } else if *self == NaNType::MIPS_LEGACY {
+            f.write_str("NaNType::MIPS_LEGACY")
+        } else {
+            f.debug_struct("NaNType")
+                .field("canonical_nan_sign", &self.canonical_nan_sign)
+                .field(
+                    "canonical_nan_mantissa_msb",
+                    &self.canonical_nan_mantissa_msb,
+                )
+                .field(
+                    "canonical_nan_mantissa_second_to_msb",
+                    &self.canonical_nan_mantissa_second_to_msb,
+                )
+                .field(
+                    "canonical_nan_mantissa_rest",
+                    &self.canonical_nan_mantissa_rest,
+                )
+                .field("quiet_nan_format", &self.quiet_nan_format())
+                .finish()
+        }
+    }
+}
+
+impl NaNType {
+    pub const RISC_V: NaNType = NaNType {
+        canonical_nan_sign: Sign::Positive,
+        canonical_nan_mantissa_msb: true,
+        canonical_nan_mantissa_second_to_msb: false,
+        canonical_nan_mantissa_rest: false,
+    };
+    pub const X86: NaNType = NaNType {
+        canonical_nan_sign: Sign::Negative,
+        canonical_nan_mantissa_msb: true,
+        canonical_nan_mantissa_second_to_msb: false,
+        canonical_nan_mantissa_rest: false,
+    };
+    pub const SPARC: NaNType = NaNType {
+        canonical_nan_sign: Sign::Positive,
+        canonical_nan_mantissa_msb: true,
+        canonical_nan_mantissa_second_to_msb: true,
+        canonical_nan_mantissa_rest: true,
+    };
+    pub const HPPA: NaNType = NaNType {
+        canonical_nan_sign: Sign::Positive,
+        canonical_nan_mantissa_msb: false,
+        canonical_nan_mantissa_second_to_msb: true,
+        canonical_nan_mantissa_rest: false,
+    };
+    pub const MIPS_LEGACY: NaNType = NaNType {
+        canonical_nan_sign: Sign::Positive,
+        canonical_nan_mantissa_msb: false,
+        canonical_nan_mantissa_second_to_msb: true,
+        canonical_nan_mantissa_rest: true,
+    };
+    pub const fn default() -> Self {
+        Self::RISC_V
+    }
+    pub fn quiet_nan_format(self) -> QuietNaNFormat {
+        match self.canonical_nan_mantissa_msb {
+            false => QuietNaNFormat::MIPSLegacy,
+            true => QuietNaNFormat::Standard,
+        }
     }
 }
 
@@ -186,7 +305,7 @@ pub struct FloatProperties {
     mantissa_width: usize,
     has_implicit_leading_bit: bool,
     has_sign_bit: bool,
-    nan_format: NaNFormat,
+    nan_type: NaNType,
 }
 
 impl FloatProperties {
@@ -196,14 +315,14 @@ impl FloatProperties {
         mantissa_width: usize,
         has_implicit_leading_bit: bool,
         has_sign_bit: bool,
-        nan_format: NaNFormat,
+        nan_type: NaNType,
     ) -> Self {
         Self {
             exponent_width,
             mantissa_width,
             has_implicit_leading_bit,
             has_sign_bit,
-            nan_format,
+            nan_type,
         }
     }
     #[inline]
@@ -213,29 +332,63 @@ impl FloatProperties {
             mantissa_width,
             has_implicit_leading_bit: true,
             has_sign_bit: true,
-            nan_format: NaNFormat::Standard,
+            nan_type: NaNType::default(),
+        }
+    }
+    #[inline]
+    pub const fn new_with_nan_type(
+        exponent_width: usize,
+        mantissa_width: usize,
+        nan_type: NaNType,
+    ) -> Self {
+        Self {
+            exponent_width,
+            mantissa_width,
+            has_implicit_leading_bit: true,
+            has_sign_bit: true,
+            nan_type,
         }
     }
     /// `FloatProperties` for standard [__binary16__ format](https://en.wikipedia.org/wiki/Half-precision_floating-point_format)
-    pub const STANDARD_16: Self = Self::new(5, 10);
+    pub const STANDARD_16: Self = Self::standard_16_with_nan_type(NaNType::default());
     /// `FloatProperties` for standard [__binary32__ format](https://en.wikipedia.org/wiki/Single-precision_floating-point_format)
-    pub const STANDARD_32: Self = Self::new(8, 23);
+    pub const STANDARD_32: Self = Self::standard_32_with_nan_type(NaNType::default());
     /// `FloatProperties` for standard [__binary64__ format](https://en.wikipedia.org/wiki/Double-precision_floating-point_format)
-    pub const STANDARD_64: Self = Self::new(11, 52);
+    pub const STANDARD_64: Self = Self::standard_64_with_nan_type(NaNType::default());
     /// `FloatProperties` for standard [__binary128__ format](https://en.wikipedia.org/wiki/Quadruple-precision_floating-point_format)
-    pub const STANDARD_128: Self = Self::new(15, 112);
+    pub const STANDARD_128: Self = Self::standard_128_with_nan_type(NaNType::default());
+    /// `FloatProperties` for standard [__binary16__ format](https://en.wikipedia.org/wiki/Half-precision_floating-point_format)
+    pub const fn standard_16_with_nan_type(nan_type: NaNType) -> Self {
+        Self::new_with_nan_type(5, 10, nan_type)
+    }
+    /// `FloatProperties` for standard [__binary32__ format](https://en.wikipedia.org/wiki/Single-precision_floating-point_format)
+    pub const fn standard_32_with_nan_type(nan_type: NaNType) -> Self {
+        Self::new_with_nan_type(8, 23, nan_type)
+    }
+    /// `FloatProperties` for standard [__binary64__ format](https://en.wikipedia.org/wiki/Double-precision_floating-point_format)
+    pub const fn standard_64_with_nan_type(nan_type: NaNType) -> Self {
+        Self::new_with_nan_type(11, 52, nan_type)
+    }
+    /// `FloatProperties` for standard [__binary128__ format](https://en.wikipedia.org/wiki/Quadruple-precision_floating-point_format)
+    pub const fn standard_128_with_nan_type(nan_type: NaNType) -> Self {
+        Self::new_with_nan_type(15, 112, nan_type)
+    }
     /// construct `FloatProperties` for standard `width`-bit binary interchange format, if it exists
     #[inline]
-    pub fn standard(width: usize) -> Option<Self> {
+    pub fn standard_with_nan_type(width: usize, nan_type: NaNType) -> Option<Self> {
         match width {
-            16 => Some(Self::STANDARD_16),
-            32 => Some(Self::STANDARD_32),
-            64 => Some(Self::STANDARD_64),
-            128 => Some(Self::STANDARD_128),
+            16 => Some(Self::new_with_nan_type(5, 10, nan_type)),
+            32 => Some(Self::new_with_nan_type(8, 23, nan_type)),
+            64 => Some(Self::new_with_nan_type(11, 52, nan_type)),
+            128 => Some(Self::new_with_nan_type(15, 112, nan_type)),
             _ => {
                 if width > 128 && width.is_multiple_of(&32) {
                     let exponent_width = ((width as f64).log2() * 4.0).round() as usize - 13;
-                    Some(Self::new(exponent_width, width - exponent_width - 1))
+                    Some(Self::new_with_nan_type(
+                        exponent_width,
+                        width - exponent_width - 1,
+                        nan_type,
+                    ))
                 } else {
                     None
                 }
@@ -243,18 +396,12 @@ impl FloatProperties {
         }
     }
     #[inline]
+    pub fn standard(width: usize) -> Option<Self> {
+        Self::standard_with_nan_type(width, NaNType::default())
+    }
+    #[inline]
     pub fn is_standard(self) -> bool {
-        match self.width() {
-            16 => Self::STANDARD_16 == self,
-            32 => Self::STANDARD_32 == self,
-            64 => Self::STANDARD_64 == self,
-            128 => Self::STANDARD_128 == self,
-            width => {
-                width > 128
-                    && width.is_multiple_of(&32)
-                    && Self::standard(self.width()) == Some(self)
-            }
-        }
+        Self::standard_with_nan_type(self.width(), self.nan_type()) == Some(self)
     }
     /// the number of bits in the exponent field
     #[inline]
@@ -276,8 +423,12 @@ impl FloatProperties {
         self.has_sign_bit
     }
     #[inline]
-    pub const fn nan_format(self) -> NaNFormat {
-        self.nan_format
+    pub const fn nan_type(self) -> NaNType {
+        self.nan_type
+    }
+    #[inline]
+    pub fn quiet_nan_format(self) -> QuietNaNFormat {
+        self.nan_type.quiet_nan_format()
     }
     #[inline]
     pub const fn width(self) -> usize {
@@ -348,12 +499,43 @@ impl fmt::Debug for FloatProperties {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let is_standard = self.is_standard();
         if !f.alternate() && is_standard {
-            match self.width() {
-                16 => f.write_str("FloatProperties::STANDARD_16"),
-                32 => f.write_str("FloatProperties::STANDARD_32"),
-                64 => f.write_str("FloatProperties::STANDARD_64"),
-                128 => f.write_str("FloatProperties::STANDARD_128"),
-                width => write!(f, "FloatProperties::standard({})", width),
+            if self.nan_type() == NaNType::default() {
+                match self.width() {
+                    16 => f.write_str("FloatProperties::STANDARD_16"),
+                    32 => f.write_str("FloatProperties::STANDARD_32"),
+                    64 => f.write_str("FloatProperties::STANDARD_64"),
+                    128 => f.write_str("FloatProperties::STANDARD_128"),
+                    width => write!(f, "FloatProperties::standard({})", width),
+                }
+            } else {
+                match self.width() {
+                    16 => write!(
+                        f,
+                        "FloatProperties::standard_16_with_nan_type({:?})",
+                        self.nan_type()
+                    ),
+                    32 => write!(
+                        f,
+                        "FloatProperties::standard_32_with_nan_type({:?})",
+                        self.nan_type()
+                    ),
+                    64 => write!(
+                        f,
+                        "FloatProperties::standard_64_with_nan_type({:?})",
+                        self.nan_type()
+                    ),
+                    128 => write!(
+                        f,
+                        "FloatProperties::standard_128_with_nan_type({:?})",
+                        self.nan_type()
+                    ),
+                    width => write!(
+                        f,
+                        "FloatProperties::standard_with_nan_type({}, {:?})",
+                        width,
+                        self.nan_type()
+                    ),
+                }
             }
         } else {
             f.debug_struct("FloatProperties")
@@ -361,7 +543,8 @@ impl fmt::Debug for FloatProperties {
                 .field("mantissa_width", &self.mantissa_width())
                 .field("has_implicit_leading_bit", &self.has_implicit_leading_bit())
                 .field("has_sign_bit", &self.has_sign_bit())
-                .field("nan_format", &self.nan_format())
+                .field("nan_type", &self.nan_type())
+                .field("quiet_nan_format", &self.quiet_nan_format())
                 .field("width", &self.width())
                 .field("fraction_width", &self.fraction_width())
                 .field("is_standard", &is_standard)
@@ -378,14 +561,26 @@ pub trait FloatTraits: Clone + fmt::Debug {
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F16Traits;
 
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub struct F16WithNaNTypeTraits(pub NaNType);
+
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F32Traits;
+
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub struct F32WithNaNTypeTraits(pub NaNType);
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F64Traits;
 
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub struct F64WithNaNTypeTraits(pub NaNType);
+
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F128Traits;
+
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub struct F128WithNaNTypeTraits(pub NaNType);
 
 impl FloatTraits for FloatProperties {
     type Bits = BigUint;
@@ -401,10 +596,24 @@ impl FloatTraits for F16Traits {
     }
 }
 
+impl FloatTraits for F16WithNaNTypeTraits {
+    type Bits = u16;
+    fn properties(&self) -> FloatProperties {
+        FloatProperties::standard_16_with_nan_type(self.0)
+    }
+}
+
 impl FloatTraits for F32Traits {
     type Bits = u32;
     fn properties(&self) -> FloatProperties {
         FloatProperties::STANDARD_32
+    }
+}
+
+impl FloatTraits for F32WithNaNTypeTraits {
+    type Bits = u32;
+    fn properties(&self) -> FloatProperties {
+        FloatProperties::standard_32_with_nan_type(self.0)
     }
 }
 
@@ -415,10 +624,24 @@ impl FloatTraits for F64Traits {
     }
 }
 
+impl FloatTraits for F64WithNaNTypeTraits {
+    type Bits = u64;
+    fn properties(&self) -> FloatProperties {
+        FloatProperties::standard_64_with_nan_type(self.0)
+    }
+}
+
 impl FloatTraits for F128Traits {
     type Bits = u128;
     fn properties(&self) -> FloatProperties {
         FloatProperties::STANDARD_128
+    }
+}
+
+impl FloatTraits for F128WithNaNTypeTraits {
+    type Bits = u128;
+    fn properties(&self) -> FloatProperties {
+        FloatProperties::standard_128_with_nan_type(self.0)
     }
 }
 
@@ -570,7 +793,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             if mantissa_field.is_zero() {
                 FloatClass::PositiveInfinity
             } else if properties
-                .nan_format()
+                .quiet_nan_format()
                 .is_nan_quiet(self.mantissa_field_msb())
             {
                 FloatClass::QuietNaN
@@ -770,9 +993,9 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let properties = traits.properties();
         let mut retval = Self::positive_zero_with_traits(traits);
         retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
-        match properties.nan_format() {
-            NaNFormat::Standard => retval.set_mantissa_field_msb(true),
-            NaNFormat::MIPSLegacy => {
+        match properties.quiet_nan_format() {
+            QuietNaNFormat::Standard => retval.set_mantissa_field_msb(true),
+            QuietNaNFormat::MIPSLegacy => {
                 retval.set_mantissa_field(properties.mantissa_field_max());
                 retval.set_mantissa_field_msb(false);
             }
@@ -789,9 +1012,9 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let properties = traits.properties();
         let mut retval = Self::positive_zero_with_traits(traits);
         retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
-        match properties.nan_format() {
-            NaNFormat::Standard => retval.set_mantissa_field(Bits::one()),
-            NaNFormat::MIPSLegacy => retval.set_mantissa_field_msb(true),
+        match properties.quiet_nan_format() {
+            QuietNaNFormat::Standard => retval.set_mantissa_field(Bits::one()),
+            QuietNaNFormat::MIPSLegacy => retval.set_mantissa_field_msb(true),
         }
         retval
     }
@@ -804,9 +1027,9 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn into_quiet_nan(mut self) -> Self {
         let properties = self.properties();
         self.set_exponent_field(properties.exponent_inf_nan::<Bits>());
-        match properties.nan_format() {
-            NaNFormat::Standard => self.set_mantissa_field_msb(true),
-            NaNFormat::MIPSLegacy => return Self::quiet_nan_with_traits(self.traits),
+        match properties.quiet_nan_format() {
+            QuietNaNFormat::Standard => self.set_mantissa_field_msb(true),
+            QuietNaNFormat::MIPSLegacy => return Self::quiet_nan_with_traits(self.traits),
         }
         self
     }
@@ -828,9 +1051,13 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     }
     pub fn from_real_algebraic_number_with_traits(
         value: &RealAlgebraicNumber,
-        rounding_mode: RoundingMode,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
         traits: FT,
     ) -> Self {
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
         let properties = traits.properties();
         let sign = if value.is_positive() {
             Sign::Positive
@@ -978,12 +1205,13 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     }
     pub fn from_real_algebraic_number(
         value: &RealAlgebraicNumber,
-        rounding_mode: RoundingMode,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
     ) -> Self
     where
         FT: Default,
     {
-        Self::from_real_algebraic_number_with_traits(value, rounding_mode, FT::default())
+        Self::from_real_algebraic_number_with_traits(value, rounding_mode, fp_state, FT::default())
     }
 }
 
@@ -1029,18 +1257,113 @@ pub type F32 = Float<F32Traits>;
 pub type F64 = Float<F64Traits>;
 pub type F128 = Float<F128Traits>;
 
+pub type F16WithNaNType = Float<F16WithNaNTypeTraits>;
+pub type F32WithNaNType = Float<F32WithNaNTypeTraits>;
+pub type F64WithNaNType = Float<F64WithNaNTypeTraits>;
+pub type F128WithNaNType = Float<F128WithNaNTypeTraits>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_debug() {
-        assert_eq!(&format!("{:?}", F16::from_bits(0x0000)), "Float { traits: F16Traits, bits: 0x0000, sign: Positive, exponent_field: 0x00, mantissa_field: 0x000, class: PositiveZero }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0x8000)), "Float { traits: F16Traits, bits: 0x8000, sign: Negative, exponent_field: 0x00, mantissa_field: 0x000, class: NegativeZero }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0xFC00)), "Float { traits: F16Traits, bits: 0xFC00, sign: Negative, exponent_field: 0x1F, mantissa_field: 0x000, class: NegativeInfinity }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0xFE00)), "Float { traits: F16Traits, bits: 0xFE00, sign: Negative, exponent_field: 0x1F, mantissa_field: 0x200, class: QuietNaN }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0x0001)), "Float { traits: F16Traits, bits: 0x0001, sign: Positive, exponent_field: 0x00, mantissa_field: 0x001, class: PositiveSubnormal }");
-        assert_eq!(&format!("{:?}", F16::from_bits(0x3C00)), "Float { traits: F16Traits, bits: 0x3C00, sign: Positive, exponent_field: 0x0F, mantissa_field: 0x000, class: PositiveNormal }");
+        assert_eq!(
+            &format!("{:?}", F16::from_bits(0x0000)),
+            "Float { traits: F16Traits, bits: 0x0000, sign: Positive, \
+             exponent_field: 0x00, mantissa_field: 0x000, class: PositiveZero }",
+        );
+        assert_eq!(
+            &format!("{:?}", F16::from_bits(0x8000)),
+            "Float { traits: F16Traits, bits: 0x8000, sign: Negative, \
+             exponent_field: 0x00, mantissa_field: 0x000, class: NegativeZero }",
+        );
+        assert_eq!(
+            &format!("{:?}", F16::from_bits(0xFC00)),
+            "Float { traits: F16Traits, bits: 0xFC00, sign: Negative, \
+             exponent_field: 0x1F, mantissa_field: 0x000, class: NegativeInfinity }",
+        );
+        assert_eq!(
+            &format!("{:?}", F16::from_bits(0xFE00)),
+            "Float { traits: F16Traits, bits: 0xFE00, sign: Negative, \
+             exponent_field: 0x1F, mantissa_field: 0x200, class: QuietNaN }",
+        );
+        assert_eq!(
+            &format!("{:?}", F16::from_bits(0x0001)),
+            "Float { traits: F16Traits, bits: 0x0001, sign: Positive, \
+             exponent_field: 0x00, mantissa_field: 0x001, class: PositiveSubnormal }",
+        );
+        assert_eq!(
+            &format!("{:?}", F16::from_bits(0x3C00)),
+            "Float { traits: F16Traits, bits: 0x3C00, sign: Positive, \
+             exponent_field: 0x0F, mantissa_field: 0x000, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::RISC_V))
+            ),
+            "Float { traits: F16WithNaNTypeTraits(NaNType::RISC_V), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::SPARC))
+            ),
+            "Float { traits: F16WithNaNTypeTraits(NaNType::SPARC), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::X86))
+            ),
+            "Float { traits: F16WithNaNTypeTraits(NaNType::X86), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::HPPA))
+            ),
+            "Float { traits: F16WithNaNTypeTraits(NaNType::HPPA), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithNaNType::from_bits_and_traits(
+                    0x1234,
+                    F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)
+                )
+            ),
+            "Float { traits: F16WithNaNTypeTraits(NaNType::MIPS_LEGACY), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithNaNType::from_bits_and_traits(
+                    0x1234,
+                    F16WithNaNTypeTraits(NaNType {
+                        canonical_nan_sign: Sign::Negative,
+                        ..NaNType::MIPS_LEGACY
+                    })
+                )
+            ),
+            "Float { traits: F16WithNaNTypeTraits(NaNType { \
+             canonical_nan_sign: Negative, canonical_nan_mantissa_msb: false, \
+             canonical_nan_mantissa_second_to_msb: true, \
+             canonical_nan_mantissa_rest: true, quiet_nan_format: MIPSLegacy }), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
     }
 
     #[test]
@@ -1068,6 +1391,38 @@ mod tests {
         assert_eq!(F16::from_bits(0xFDFF).class(), SignalingNaN);
         assert_eq!(F16::from_bits(0xFE00).class(), QuietNaN);
         assert_eq!(F16::from_bits(0xFFFF).class(), QuietNaN);
+        assert_eq!(
+            Float::from_bits_and_traits(0x7C01, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            QuietNaN
+        );
+        assert_eq!(
+            Float::from_bits_and_traits(0x7DFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            QuietNaN
+        );
+        assert_eq!(
+            Float::from_bits_and_traits(0x7E00, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            SignalingNaN
+        );
+        assert_eq!(
+            Float::from_bits_and_traits(0x7FFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            SignalingNaN
+        );
+        assert_eq!(
+            Float::from_bits_and_traits(0xFC01, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            QuietNaN
+        );
+        assert_eq!(
+            Float::from_bits_and_traits(0xFDFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            QuietNaN
+        );
+        assert_eq!(
+            Float::from_bits_and_traits(0xFE00, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            SignalingNaN
+        );
+        assert_eq!(
+            Float::from_bits_and_traits(0xFFFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            SignalingNaN
+        );
     }
 
     #[test]
@@ -1112,221 +1467,6 @@ mod tests {
         test_case!(F16::from_bits(0xFDFF), None);
         test_case!(F16::from_bits(0xFE00), None);
         test_case!(F16::from_bits(0xFFFF), None);
-    }
-
-    #[test]
-    fn test_from_real_algebraic_number() {
-        fn test_case(
-            n: i32,
-            d: i32,
-            expected_float_ties_to_even: u16,
-            expected_float_ties_to_away: u16,
-            expected_float_toward_positive: u16,
-            expected_float_toward_negative: u16,
-            expected_float_toward_zero: u16,
-        ) {
-            println!(
-                "value: {}{:#X}/{:#X}",
-                if n < 0 { "-" } else { "" },
-                n.abs(),
-                d
-            );
-            let value = RealAlgebraicNumber::from(Ratio::new(n, d));
-            let expected_float_ties_to_even = F16::from_bits(expected_float_ties_to_even);
-            let expected_float_ties_to_away = F16::from_bits(expected_float_ties_to_away);
-            let expected_float_toward_positive = F16::from_bits(expected_float_toward_positive);
-            let expected_float_toward_negative = F16::from_bits(expected_float_toward_negative);
-            let expected_float_toward_zero = F16::from_bits(expected_float_toward_zero);
-            println!(
-                "expected_float_ties_to_even: {:?}",
-                expected_float_ties_to_even
-            );
-            println!(
-                "expected_float_ties_to_away: {:?}",
-                expected_float_ties_to_away
-            );
-            println!(
-                "expected_float_toward_positive: {:?}",
-                expected_float_toward_positive
-            );
-            println!(
-                "expected_float_toward_negative: {:?}",
-                expected_float_toward_negative
-            );
-            println!(
-                "expected_float_toward_zero: {:?}",
-                expected_float_toward_zero
-            );
-            let float_ties_to_even =
-                F16::from_real_algebraic_number(&value, RoundingMode::TiesToEven);
-            println!("float_ties_to_even: {:?}", float_ties_to_even);
-            assert!(expected_float_ties_to_even.bits() == float_ties_to_even.bits());
-            let float_ties_to_away =
-                F16::from_real_algebraic_number(&value, RoundingMode::TiesToAway);
-            println!("float_ties_to_away: {:?}", float_ties_to_away);
-            assert!(expected_float_ties_to_away.bits() == float_ties_to_away.bits());
-            let float_toward_positive =
-                F16::from_real_algebraic_number(&value, RoundingMode::TowardPositive);
-            println!("float_toward_positive: {:?}", float_toward_positive);
-            assert!(expected_float_toward_positive.bits() == float_toward_positive.bits());
-            let float_toward_negative =
-                F16::from_real_algebraic_number(&value, RoundingMode::TowardNegative);
-            println!("float_toward_negative: {:?}", float_toward_negative);
-            assert!(expected_float_toward_negative.bits() == float_toward_negative.bits());
-            let float_toward_zero =
-                F16::from_real_algebraic_number(&value, RoundingMode::TowardZero);
-            println!("float_toward_zero: {:?}", float_toward_zero);
-            assert!(expected_float_toward_zero.bits() == float_toward_zero.bits());
-        }
-
-        // test the values right around zero
-        test_case(-16, 1 << 26, 0x8004, 0x8004, 0x8004, 0x8004, 0x8004);
-        test_case(-15, 1 << 26, 0x8004, 0x8004, 0x8003, 0x8004, 0x8003);
-        test_case(-14, 1 << 26, 0x8004, 0x8004, 0x8003, 0x8004, 0x8003);
-        test_case(-13, 1 << 26, 0x8003, 0x8003, 0x8003, 0x8004, 0x8003);
-        test_case(-12, 1 << 26, 0x8003, 0x8003, 0x8003, 0x8003, 0x8003);
-        test_case(-11, 1 << 26, 0x8003, 0x8003, 0x8002, 0x8003, 0x8002);
-        test_case(-10, 1 << 26, 0x8002, 0x8003, 0x8002, 0x8003, 0x8002);
-        test_case(-9, 1 << 26, 0x8002, 0x8002, 0x8002, 0x8003, 0x8002);
-        test_case(-8, 1 << 26, 0x8002, 0x8002, 0x8002, 0x8002, 0x8002);
-        test_case(-7, 1 << 26, 0x8002, 0x8002, 0x8001, 0x8002, 0x8001);
-        test_case(-6, 1 << 26, 0x8002, 0x8002, 0x8001, 0x8002, 0x8001);
-        test_case(-5, 1 << 26, 0x8001, 0x8001, 0x8001, 0x8002, 0x8001);
-        test_case(-4, 1 << 26, 0x8001, 0x8001, 0x8001, 0x8001, 0x8001);
-        test_case(-3, 1 << 26, 0x8001, 0x8001, 0x8000, 0x8001, 0x8000);
-        test_case(-2, 1 << 26, 0x8000, 0x8001, 0x8000, 0x8001, 0x8000);
-        test_case(-1, 1 << 26, 0x8000, 0x8000, 0x8000, 0x8001, 0x8000);
-        test_case(0, 1 << 26, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000);
-        test_case(1, 1 << 26, 0x0000, 0x0000, 0x0001, 0x0000, 0x0000);
-        test_case(2, 1 << 26, 0x0000, 0x0001, 0x0001, 0x0000, 0x0000);
-        test_case(3, 1 << 26, 0x0001, 0x0001, 0x0001, 0x0000, 0x0000);
-        test_case(4, 1 << 26, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001);
-        test_case(5, 1 << 26, 0x0001, 0x0001, 0x0002, 0x0001, 0x0001);
-        test_case(6, 1 << 26, 0x0002, 0x0002, 0x0002, 0x0001, 0x0001);
-        test_case(7, 1 << 26, 0x0002, 0x0002, 0x0002, 0x0001, 0x0001);
-        test_case(8, 1 << 26, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002);
-        test_case(9, 1 << 26, 0x0002, 0x0002, 0x0003, 0x0002, 0x0002);
-        test_case(10, 1 << 26, 0x0002, 0x0003, 0x0003, 0x0002, 0x0002);
-        test_case(11, 1 << 26, 0x0003, 0x0003, 0x0003, 0x0002, 0x0002);
-        test_case(12, 1 << 26, 0x0003, 0x0003, 0x0003, 0x0003, 0x0003);
-        test_case(13, 1 << 26, 0x0003, 0x0003, 0x0004, 0x0003, 0x0003);
-        test_case(14, 1 << 26, 0x0004, 0x0004, 0x0004, 0x0003, 0x0003);
-        test_case(15, 1 << 26, 0x0004, 0x0004, 0x0004, 0x0003, 0x0003);
-        test_case(16, 1 << 26, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004);
-
-        // test the values at the transition between subnormal and normal
-        test_case(-0x3FE0, 1 << 28, 0x83FE, 0x83FE, 0x83FE, 0x83FE, 0x83FE);
-        test_case(-0x3FE4, 1 << 28, 0x83FE, 0x83FE, 0x83FE, 0x83FF, 0x83FE);
-        test_case(-0x3FE8, 1 << 28, 0x83FE, 0x83FF, 0x83FE, 0x83FF, 0x83FE);
-        test_case(-0x3FEC, 1 << 28, 0x83FF, 0x83FF, 0x83FE, 0x83FF, 0x83FE);
-        test_case(-0x3FF0, 1 << 28, 0x83FF, 0x83FF, 0x83FF, 0x83FF, 0x83FF);
-        test_case(-0x3FF4, 1 << 28, 0x83FF, 0x83FF, 0x83FF, 0x8400, 0x83FF);
-        test_case(-0x3FF8, 1 << 28, 0x8400, 0x8400, 0x83FF, 0x8400, 0x83FF);
-        test_case(-0x3FFC, 1 << 28, 0x8400, 0x8400, 0x83FF, 0x8400, 0x83FF);
-        test_case(-0x4000, 1 << 28, 0x8400, 0x8400, 0x8400, 0x8400, 0x8400);
-        test_case(-0x4004, 1 << 28, 0x8400, 0x8400, 0x8400, 0x8401, 0x8400);
-        test_case(-0x4008, 1 << 28, 0x8400, 0x8401, 0x8400, 0x8401, 0x8400);
-        test_case(-0x400C, 1 << 28, 0x8401, 0x8401, 0x8400, 0x8401, 0x8400);
-        test_case(-0x4010, 1 << 28, 0x8401, 0x8401, 0x8401, 0x8401, 0x8401);
-        test_case(-0x4014, 1 << 28, 0x8401, 0x8401, 0x8401, 0x8402, 0x8401);
-        test_case(-0x4018, 1 << 28, 0x8402, 0x8402, 0x8401, 0x8402, 0x8401);
-        test_case(-0x401C, 1 << 28, 0x8402, 0x8402, 0x8401, 0x8402, 0x8401);
-        test_case(-0x4020, 1 << 28, 0x8402, 0x8402, 0x8402, 0x8402, 0x8402);
-        test_case(0x3FE0, 1 << 28, 0x03FE, 0x03FE, 0x03FE, 0x03FE, 0x03FE);
-        test_case(0x3FE4, 1 << 28, 0x03FE, 0x03FE, 0x03FF, 0x03FE, 0x03FE);
-        test_case(0x3FE8, 1 << 28, 0x03FE, 0x03FF, 0x03FF, 0x03FE, 0x03FE);
-        test_case(0x3FEC, 1 << 28, 0x03FF, 0x03FF, 0x03FF, 0x03FE, 0x03FE);
-        test_case(0x3FF0, 1 << 28, 0x03FF, 0x03FF, 0x03FF, 0x03FF, 0x03FF);
-        test_case(0x3FF4, 1 << 28, 0x03FF, 0x03FF, 0x0400, 0x03FF, 0x03FF);
-        test_case(0x3FF8, 1 << 28, 0x0400, 0x0400, 0x0400, 0x03FF, 0x03FF);
-        test_case(0x3FFC, 1 << 28, 0x0400, 0x0400, 0x0400, 0x03FF, 0x03FF);
-        test_case(0x4000, 1 << 28, 0x0400, 0x0400, 0x0400, 0x0400, 0x0400);
-        test_case(0x4004, 1 << 28, 0x0400, 0x0400, 0x0401, 0x0400, 0x0400);
-        test_case(0x4008, 1 << 28, 0x0400, 0x0401, 0x0401, 0x0400, 0x0400);
-        test_case(0x400C, 1 << 28, 0x0401, 0x0401, 0x0401, 0x0400, 0x0400);
-        test_case(0x4010, 1 << 28, 0x0401, 0x0401, 0x0401, 0x0401, 0x0401);
-        test_case(0x4014, 1 << 28, 0x0401, 0x0401, 0x0402, 0x0401, 0x0401);
-        test_case(0x4018, 1 << 28, 0x0402, 0x0402, 0x0402, 0x0401, 0x0401);
-        test_case(0x401C, 1 << 28, 0x0402, 0x0402, 0x0402, 0x0401, 0x0401);
-        test_case(0x4020, 1 << 28, 0x0402, 0x0402, 0x0402, 0x0402, 0x0402);
-
-        test_case(0x7FF, 1 << 20, 0x17FF, 0x17FF, 0x17FF, 0x17FF, 0x17FF);
-
-        // test the values right around 1 and -1
-        test_case(-0x3FE0, 1 << 14, 0xBBFC, 0xBBFC, 0xBBFC, 0xBBFC, 0xBBFC);
-        test_case(-0x3FE4, 1 << 14, 0xBBFC, 0xBBFD, 0xBBFC, 0xBBFD, 0xBBFC);
-        test_case(-0x3FE8, 1 << 14, 0xBBFD, 0xBBFD, 0xBBFD, 0xBBFD, 0xBBFD);
-        test_case(-0x3FEC, 1 << 14, 0xBBFE, 0xBBFE, 0xBBFD, 0xBBFE, 0xBBFD);
-        test_case(-0x3FF0, 1 << 14, 0xBBFE, 0xBBFE, 0xBBFE, 0xBBFE, 0xBBFE);
-        test_case(-0x3FF4, 1 << 14, 0xBBFE, 0xBBFF, 0xBBFE, 0xBBFF, 0xBBFE);
-        test_case(-0x3FF8, 1 << 14, 0xBBFF, 0xBBFF, 0xBBFF, 0xBBFF, 0xBBFF);
-        test_case(-0x3FFC, 1 << 14, 0xBC00, 0xBC00, 0xBBFF, 0xBC00, 0xBBFF);
-        test_case(-0x4000, 1 << 14, 0xBC00, 0xBC00, 0xBC00, 0xBC00, 0xBC00);
-        test_case(-0x4004, 1 << 14, 0xBC00, 0xBC00, 0xBC00, 0xBC01, 0xBC00);
-        test_case(-0x4008, 1 << 14, 0xBC00, 0xBC01, 0xBC00, 0xBC01, 0xBC00);
-        test_case(-0x400C, 1 << 14, 0xBC01, 0xBC01, 0xBC00, 0xBC01, 0xBC00);
-        test_case(-0x4010, 1 << 14, 0xBC01, 0xBC01, 0xBC01, 0xBC01, 0xBC01);
-        test_case(-0x4014, 1 << 14, 0xBC01, 0xBC01, 0xBC01, 0xBC02, 0xBC01);
-        test_case(-0x4018, 1 << 14, 0xBC02, 0xBC02, 0xBC01, 0xBC02, 0xBC01);
-        test_case(-0x401C, 1 << 14, 0xBC02, 0xBC02, 0xBC01, 0xBC02, 0xBC01);
-        test_case(-0x4020, 1 << 14, 0xBC02, 0xBC02, 0xBC02, 0xBC02, 0xBC02);
-        test_case(0x3FE0, 1 << 14, 0x3BFC, 0x3BFC, 0x3BFC, 0x3BFC, 0x3BFC);
-        test_case(0x3FE4, 1 << 14, 0x3BFC, 0x3BFD, 0x3BFD, 0x3BFC, 0x3BFC);
-        test_case(0x3FE8, 1 << 14, 0x3BFD, 0x3BFD, 0x3BFD, 0x3BFD, 0x3BFD);
-        test_case(0x3FEC, 1 << 14, 0x3BFE, 0x3BFE, 0x3BFE, 0x3BFD, 0x3BFD);
-        test_case(0x3FF0, 1 << 14, 0x3BFE, 0x3BFE, 0x3BFE, 0x3BFE, 0x3BFE);
-        test_case(0x3FF4, 1 << 14, 0x3BFE, 0x3BFF, 0x3BFF, 0x3BFE, 0x3BFE);
-        test_case(0x3FF8, 1 << 14, 0x3BFF, 0x3BFF, 0x3BFF, 0x3BFF, 0x3BFF);
-        test_case(0x3FFC, 1 << 14, 0x3C00, 0x3C00, 0x3C00, 0x3BFF, 0x3BFF);
-        test_case(0x4000, 1 << 14, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00);
-        test_case(0x4004, 1 << 14, 0x3C00, 0x3C00, 0x3C01, 0x3C00, 0x3C00);
-        test_case(0x4008, 1 << 14, 0x3C00, 0x3C01, 0x3C01, 0x3C00, 0x3C00);
-        test_case(0x400C, 1 << 14, 0x3C01, 0x3C01, 0x3C01, 0x3C00, 0x3C00);
-        test_case(0x4010, 1 << 14, 0x3C01, 0x3C01, 0x3C01, 0x3C01, 0x3C01);
-        test_case(0x4014, 1 << 14, 0x3C01, 0x3C01, 0x3C02, 0x3C01, 0x3C01);
-        test_case(0x4018, 1 << 14, 0x3C02, 0x3C02, 0x3C02, 0x3C01, 0x3C01);
-        test_case(0x401C, 1 << 14, 0x3C02, 0x3C02, 0x3C02, 0x3C01, 0x3C01);
-        test_case(0x4020, 1 << 14, 0x3C02, 0x3C02, 0x3C02, 0x3C02, 0x3C02);
-
-        // test values right around the max normal
-        test_case(-0x3FF00, 1 << 2, 0xFBFE, 0xFBFE, 0xFBFE, 0xFBFE, 0xFBFE);
-        test_case(-0x3FF20, 1 << 2, 0xFBFE, 0xFBFE, 0xFBFE, 0xFBFF, 0xFBFE);
-        test_case(-0x3FF40, 1 << 2, 0xFBFE, 0xFBFF, 0xFBFE, 0xFBFF, 0xFBFE);
-        test_case(-0x3FF60, 1 << 2, 0xFBFF, 0xFBFF, 0xFBFE, 0xFBFF, 0xFBFE);
-        test_case(-0x3FF80, 1 << 2, 0xFBFF, 0xFBFF, 0xFBFF, 0xFBFF, 0xFBFF);
-        test_case(-0x3FFA0, 1 << 2, 0xFBFF, 0xFBFF, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x3FFC0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x3FFE0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x40000, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x40020, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x40040, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x40060, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x40080, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x400A0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x400C0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x400E0, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(-0x40100, 1 << 2, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
-        test_case(0x3FF00, 1 << 2, 0x7BFE, 0x7BFE, 0x7BFE, 0x7BFE, 0x7BFE);
-        test_case(0x3FF20, 1 << 2, 0x7BFE, 0x7BFE, 0x7BFF, 0x7BFE, 0x7BFE);
-        test_case(0x3FF40, 1 << 2, 0x7BFE, 0x7BFF, 0x7BFF, 0x7BFE, 0x7BFE);
-        test_case(0x3FF60, 1 << 2, 0x7BFF, 0x7BFF, 0x7BFF, 0x7BFE, 0x7BFE);
-        test_case(0x3FF80, 1 << 2, 0x7BFF, 0x7BFF, 0x7BFF, 0x7BFF, 0x7BFF);
-        test_case(0x3FFA0, 1 << 2, 0x7BFF, 0x7BFF, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x3FFC0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x3FFE0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x40000, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x40020, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x40040, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x40060, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x40080, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x400A0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x400C0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x400E0, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(0x40100, 1 << 2, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-
-        // test values much larger than the max normal
-        test_case(0x1 << 20, 1, 0x7C00, 0x7C00, 0x7C00, 0x7BFF, 0x7BFF);
-        test_case(-0x1 << 20, 1, 0xFC00, 0xFC00, 0xFBFF, 0xFC00, 0xFBFF);
     }
 
     // FIXME: add more tests
