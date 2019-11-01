@@ -292,9 +292,10 @@ impl NaNType {
         Self::RISC_V
     }
     pub fn quiet_nan_format(self) -> QuietNaNFormat {
-        match self.canonical_nan_mantissa_msb {
-            false => QuietNaNFormat::MIPSLegacy,
-            true => QuietNaNFormat::Standard,
+        if self.canonical_nan_mantissa_msb {
+            QuietNaNFormat::Standard
+        } else {
+            QuietNaNFormat::MIPSLegacy
         }
     }
 }
@@ -1049,59 +1050,24 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     {
         Self::signed_max_normal_with_traits(sign, FT::default())
     }
-    pub fn from_real_algebraic_number_with_traits(
+}
+
+struct RoundedMantissa {
+    inexact: bool,
+    exponent: i64,
+    mantissa: BigInt,
+}
+
+impl RoundedMantissa {
+    fn new(
         value: &RealAlgebraicNumber,
-        rounding_mode: Option<RoundingMode>,
-        fp_state: Option<&mut FPState>,
-        traits: FT,
+        exponent: i64,
+        sign: Sign,
+        rounding_mode: RoundingMode,
+        properties: FloatProperties,
+        max_mantissa: &BigInt,
     ) -> Self {
-        let mut default_fp_state = FPState::default();
-        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
-        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
-        let properties = traits.properties();
-        let sign = if value.is_positive() {
-            Sign::Positive
-        } else if !properties.has_sign_bit() {
-            return Self::positive_zero_with_traits(traits);
-        } else {
-            Sign::Negative
-        };
-        let value = value.abs();
-        let exponent = if let Some(v) = value.checked_floor_log2() {
-            v
-        } else {
-            return Self::positive_zero_with_traits(traits);
-        };
-        let exponent_bias = properties.exponent_bias::<Bits>();
-        let exponent_bias_i64 = exponent_bias
-            .to_i64()
-            .expect("exponent_bias doesn't fit in i64");
-        let exponent_max = properties
-            .exponent_max_normal::<Bits>()
-            .to_i64()
-            .expect("exponent_max_normal doesn't fit in i64")
-            - exponent_bias_i64;
-        if exponent > exponent_max {
-            match (rounding_mode, sign) {
-                (RoundingMode::TowardNegative, Sign::Positive)
-                | (RoundingMode::TowardPositive, Sign::Negative)
-                | (RoundingMode::TowardZero, _) => {
-                    return Self::signed_max_normal_with_traits(sign, traits);
-                }
-                (RoundingMode::TowardNegative, Sign::Negative)
-                | (RoundingMode::TowardPositive, Sign::Positive)
-                | (RoundingMode::TiesToEven, _)
-                | (RoundingMode::TiesToAway, _) => {
-                    return Self::signed_infinity_with_traits(sign, traits);
-                }
-            }
-        }
-        let exponent_min = properties
-            .exponent_min_normal::<Bits>()
-            .to_i64()
-            .expect("exponent_min_normal doesn't fit in i64")
-            - exponent_bias_i64;
-        let exponent = exponent.max(exponent_min);
+        assert!(!value.is_negative());
         let ulp_shift = exponent
             - properties
                 .fraction_width()
@@ -1122,64 +1088,180 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let lower_float_mantissa = value_in_ulps.to_integer_floor();
         let remainder_in_ulps =
             value_in_ulps - RealAlgebraicNumber::from(lower_float_mantissa.clone());
-        let mut max_mantissa: BigInt = properties.mantissa_field_max::<Bits>().into();
-        let min_normal_mantissa = BigInt::one() << properties.fraction_width();
-        max_mantissa |= &min_normal_mantissa;
         assert!(!lower_float_mantissa.is_negative());
-        assert!(lower_float_mantissa <= max_mantissa);
-        let retval_exponent;
-        let mut retval_mantissa;
+        assert!(lower_float_mantissa <= *max_mantissa);
         if remainder_in_ulps.is_zero() {
-            retval_exponent = lower_float_exponent;
-            retval_mantissa = lower_float_mantissa;
+            Self {
+                inexact: false,
+                exponent: lower_float_exponent,
+                mantissa: lower_float_mantissa,
+            }
         } else {
             let mut upper_float_mantissa = &lower_float_mantissa + 1i32;
             let mut upper_float_exponent = lower_float_exponent;
-            if upper_float_mantissa > max_mantissa {
+            if upper_float_mantissa > *max_mantissa {
                 upper_float_mantissa >>= 1;
                 upper_float_exponent += 1;
             }
             match (rounding_mode, sign) {
                 (RoundingMode::TiesToEven, _) | (RoundingMode::TiesToAway, _) => {
                     match remainder_in_ulps.cmp(&RealAlgebraicNumber::from(Ratio::new(1, 2))) {
-                        Ordering::Less => {
-                            retval_exponent = lower_float_exponent;
-                            retval_mantissa = lower_float_mantissa;
-                        }
+                        Ordering::Less => Self {
+                            inexact: true,
+                            exponent: lower_float_exponent,
+                            mantissa: lower_float_mantissa,
+                        },
                         Ordering::Equal => {
                             if rounding_mode == RoundingMode::TiesToAway
                                 || lower_float_mantissa.is_odd()
                             {
-                                retval_exponent = upper_float_exponent;
-                                retval_mantissa = upper_float_mantissa;
+                                Self {
+                                    inexact: true,
+                                    exponent: upper_float_exponent,
+                                    mantissa: upper_float_mantissa,
+                                }
                             } else {
-                                retval_exponent = lower_float_exponent;
-                                retval_mantissa = lower_float_mantissa;
+                                Self {
+                                    inexact: true,
+                                    exponent: lower_float_exponent,
+                                    mantissa: lower_float_mantissa,
+                                }
                             }
                         }
-                        Ordering::Greater => {
-                            retval_exponent = upper_float_exponent;
-                            retval_mantissa = upper_float_mantissa;
-                        }
+                        Ordering::Greater => Self {
+                            inexact: true,
+                            exponent: upper_float_exponent,
+                            mantissa: upper_float_mantissa,
+                        },
                     }
                 }
-                (RoundingMode::TowardZero, _) => {
-                    retval_exponent = lower_float_exponent;
-                    retval_mantissa = lower_float_mantissa;
+                (RoundingMode::TowardZero, _) => Self {
+                    inexact: true,
+                    exponent: lower_float_exponent,
+                    mantissa: lower_float_mantissa,
+                },
+                (RoundingMode::TowardNegative, Sign::Negative)
+                | (RoundingMode::TowardPositive, Sign::Positive) => Self {
+                    inexact: true,
+                    exponent: upper_float_exponent,
+                    mantissa: upper_float_mantissa,
+                },
+                (RoundingMode::TowardNegative, Sign::Positive)
+                | (RoundingMode::TowardPositive, Sign::Negative) => Self {
+                    inexact: true,
+                    exponent: lower_float_exponent,
+                    mantissa: lower_float_mantissa,
+                },
+            }
+        }
+    }
+}
+
+impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
+    pub fn from_real_algebraic_number_with_traits(
+        value: &RealAlgebraicNumber,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+        traits: FT,
+    ) -> Self {
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let properties = traits.properties();
+        let sign = if value.is_positive() {
+            Sign::Positive
+        } else if !properties.has_sign_bit() {
+            if !value.is_zero() {
+                fp_state.status_flags |= StatusFlags::INEXACT | StatusFlags::INVALID_OPERATION;
+            }
+            return Self::positive_zero_with_traits(traits);
+        } else {
+            Sign::Negative
+        };
+        let value = value.abs();
+        let exponent = if let Some(v) = value.checked_floor_log2() {
+            v
+        } else {
+            return Self::positive_zero_with_traits(traits);
+        };
+        let exponent_bias = properties.exponent_bias::<Bits>();
+        let exponent_bias_i64 = exponent_bias
+            .to_i64()
+            .expect("exponent_bias doesn't fit in i64");
+        let exponent_max = properties
+            .exponent_max_normal::<Bits>()
+            .to_i64()
+            .expect("exponent_max_normal doesn't fit in i64")
+            - exponent_bias_i64;
+        if exponent > exponent_max {
+            fp_state.status_flags |= StatusFlags::INEXACT | StatusFlags::OVERFLOW;
+            match (rounding_mode, sign) {
+                (RoundingMode::TowardNegative, Sign::Positive)
+                | (RoundingMode::TowardPositive, Sign::Negative)
+                | (RoundingMode::TowardZero, _) => {
+                    return Self::signed_max_normal_with_traits(sign, traits);
                 }
                 (RoundingMode::TowardNegative, Sign::Negative)
-                | (RoundingMode::TowardPositive, Sign::Positive) => {
-                    retval_exponent = upper_float_exponent;
-                    retval_mantissa = upper_float_mantissa;
-                }
-                (RoundingMode::TowardNegative, Sign::Positive)
-                | (RoundingMode::TowardPositive, Sign::Negative) => {
-                    retval_exponent = lower_float_exponent;
-                    retval_mantissa = lower_float_mantissa;
+                | (RoundingMode::TowardPositive, Sign::Positive)
+                | (RoundingMode::TiesToEven, _)
+                | (RoundingMode::TiesToAway, _) => {
+                    return Self::signed_infinity_with_traits(sign, traits);
                 }
             }
         }
+        let exponent_min = properties
+            .exponent_min_normal::<Bits>()
+            .to_i64()
+            .expect("exponent_min_normal doesn't fit in i64")
+            - exponent_bias_i64;
+        let min_normal_mantissa = BigInt::one() << properties.fraction_width();
+        let mut max_mantissa: BigInt = properties.mantissa_field_max::<BigUint>().into();
+        max_mantissa |= &min_normal_mantissa;
+        let RoundedMantissa {
+            inexact,
+            exponent: retval_exponent,
+            mantissa: mut retval_mantissa,
+        } = RoundedMantissa::new(
+            &value,
+            exponent.max(exponent_min),
+            sign,
+            rounding_mode,
+            properties,
+            &max_mantissa,
+        );
+        let check_for_underflow = match fp_state.exception_handling_mode {
+            ExceptionHandlingMode::DefaultIgnoreExactUnderflow => inexact,
+            ExceptionHandlingMode::DefaultSignalExactUnderflow => true,
+        };
+        if exponent < exponent_min && check_for_underflow {
+            let tiny = match fp_state.tininess_detection_mode {
+                TininessDetectionMode::BeforeRounding => true,
+                TininessDetectionMode::AfterRounding => {
+                    if retval_mantissa < min_normal_mantissa {
+                        true
+                    } else {
+                        RoundedMantissa::new(
+                            &value,
+                            exponent_min - 1,
+                            sign,
+                            rounding_mode,
+                            properties,
+                            &max_mantissa,
+                        )
+                        .exponent
+                            < exponent_min
+                    }
+                }
+            };
+            if tiny {
+                fp_state.status_flags |= StatusFlags::UNDERFLOW;
+            }
+        }
+        if inexact {
+            fp_state.status_flags |= StatusFlags::INEXACT;
+        }
         if retval_exponent > exponent_max {
+            fp_state.status_flags |= StatusFlags::OVERFLOW;
             return Self::signed_infinity_with_traits(sign, traits);
         }
         let mut retval = Self::signed_zero_with_traits(sign, traits);
@@ -1264,6 +1346,7 @@ pub type F128WithNaNType = Float<F128WithNaNTypeTraits>;
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::cognitive_complexity)]
     use super::*;
 
     #[test]
