@@ -144,6 +144,154 @@ impl Default for TininessDetectionMode {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum BinaryNaNPropagationMode {
+    AlwaysCanonical,
+    FirstSecond,
+    SecondFirst,
+    FirstSecondPreferringSNaN,
+    SecondFirstPreferringSNaN,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum BinaryNaNPropagationResults {
+    Canonical,
+    First,
+    Second,
+}
+
+impl Default for BinaryNaNPropagationResults {
+    fn default() -> Self {
+        Self::Canonical
+    }
+}
+
+impl BinaryNaNPropagationMode {
+    pub fn calculate_propagation_results(
+        self,
+        first_class: FloatClass,
+        second_class: FloatClass,
+    ) -> BinaryNaNPropagationResults {
+        use BinaryNaNPropagationMode::*;
+        use BinaryNaNPropagationResults::*;
+        match self {
+            AlwaysCanonical => Canonical,
+            FirstSecond => {
+                if first_class.is_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else {
+                    Canonical
+                }
+            }
+            SecondFirst => {
+                if second_class.is_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else {
+                    Canonical
+                }
+            }
+            FirstSecondPreferringSNaN => {
+                if first_class.is_signaling_nan() {
+                    First
+                } else if second_class.is_signaling_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else {
+                    Canonical
+                }
+            }
+            SecondFirstPreferringSNaN => {
+                if second_class.is_signaling_nan() {
+                    Second
+                } else if first_class.is_signaling_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else {
+                    Canonical
+                }
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum NaNPropagationResults {
+    Canonical,
+    First,
+    Second,
+    Third,
+}
+
+impl Default for NaNPropagationResults {
+    fn default() -> Self {
+        Self::Canonical
+    }
+}
+
+impl From<NaNPropagationMode> for BinaryNaNPropagationMode {
+    fn from(v: NaNPropagationMode) -> Self {
+        use BinaryNaNPropagationMode::*;
+        use NaNPropagationMode::*;
+        match v {
+            NaNPropagationMode::AlwaysCanonical => BinaryNaNPropagationMode::AlwaysCanonical,
+            FirstSecondThird | FirstThirdSecond | ThirdFirstSecond => FirstSecond,
+            SecondFirstThird | SecondThirdFirst | ThirdSecondFirst => SecondFirst,
+            FirstSecondThirdPreferringSNaN
+            | FirstThirdSecondPreferringSNaN
+            | ThirdFirstSecondPreferringSNaN => FirstSecondPreferringSNaN,
+            SecondFirstThirdPreferringSNaN
+            | SecondThirdFirstPreferringSNaN
+            | ThirdSecondFirstPreferringSNaN => SecondFirstPreferringSNaN,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum NaNPropagationMode {
+    AlwaysCanonical,
+    FirstSecondThird,
+    FirstThirdSecond,
+    SecondFirstThird,
+    SecondThirdFirst,
+    ThirdFirstSecond,
+    ThirdSecondFirst,
+    FirstSecondThirdPreferringSNaN,
+    FirstThirdSecondPreferringSNaN,
+    SecondFirstThirdPreferringSNaN,
+    SecondThirdFirstPreferringSNaN,
+    ThirdFirstSecondPreferringSNaN,
+    ThirdSecondFirstPreferringSNaN,
+}
+
+impl Default for NaNPropagationMode {
+    fn default() -> NaNPropagationMode {
+        NaNPropagationMode::AlwaysCanonical
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum FMAInfZeroQNaNResult {
+    FollowNaNPropagationMode,
+    CanonicalAndGenerateInvalid,
+    PropagateAndGenerateInvalid,
+}
+
+impl Default for FMAInfZeroQNaNResult {
+    fn default() -> FMAInfZeroQNaNResult {
+        FMAInfZeroQNaNResult::FollowNaNPropagationMode
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
 pub struct FPState {
     pub rounding_mode: RoundingMode,
@@ -166,6 +314,91 @@ pub enum FloatClass {
     PositiveZero,
     QuietNaN,
     SignalingNaN,
+}
+
+impl FloatClass {
+    #[inline]
+    pub fn is_negative_infinity(self) -> bool {
+        self == FloatClass::NegativeInfinity
+    }
+    #[inline]
+    pub fn is_negative_normal(self) -> bool {
+        self == FloatClass::NegativeNormal
+    }
+    #[inline]
+    pub fn is_negative_subnormal(self) -> bool {
+        self == FloatClass::NegativeSubnormal
+    }
+    #[inline]
+    pub fn is_negative_zero(self) -> bool {
+        self == FloatClass::NegativeZero
+    }
+    #[inline]
+    pub fn is_positive_infinity(self) -> bool {
+        self == FloatClass::PositiveInfinity
+    }
+    #[inline]
+    pub fn is_positive_normal(self) -> bool {
+        self == FloatClass::PositiveNormal
+    }
+    #[inline]
+    pub fn is_positive_subnormal(self) -> bool {
+        self == FloatClass::PositiveSubnormal
+    }
+    #[inline]
+    pub fn is_positive_zero(self) -> bool {
+        self == FloatClass::PositiveZero
+    }
+    #[inline]
+    pub fn is_quiet_nan(self) -> bool {
+        self == FloatClass::QuietNaN
+    }
+    #[inline]
+    pub fn is_signaling_nan(self) -> bool {
+        self == FloatClass::SignalingNaN
+    }
+    #[inline]
+    pub fn is_infinity(self) -> bool {
+        self == FloatClass::NegativeInfinity || self == FloatClass::PositiveInfinity
+    }
+    #[inline]
+    pub fn is_normal(self) -> bool {
+        self == FloatClass::NegativeNormal || self == FloatClass::PositiveNormal
+    }
+    #[inline]
+    pub fn is_subnormal(self) -> bool {
+        self == FloatClass::NegativeSubnormal || self == FloatClass::PositiveSubnormal
+    }
+    #[inline]
+    pub fn is_zero(self) -> bool {
+        self == FloatClass::NegativeZero || self == FloatClass::PositiveZero
+    }
+    #[inline]
+    pub fn is_nan(self) -> bool {
+        self == FloatClass::QuietNaN || self == FloatClass::SignalingNaN
+    }
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        match self {
+            FloatClass::NegativeZero
+            | FloatClass::NegativeSubnormal
+            | FloatClass::NegativeNormal
+            | FloatClass::PositiveZero
+            | FloatClass::PositiveSubnormal
+            | FloatClass::PositiveNormal => true,
+            _ => false,
+        }
+    }
+    #[inline]
+    pub fn is_subnormal_or_zero(self) -> bool {
+        match self {
+            FloatClass::NegativeZero
+            | FloatClass::NegativeSubnormal
+            | FloatClass::PositiveZero
+            | FloatClass::PositiveSubnormal => true,
+            _ => false,
+        }
+    }
 }
 
 impl Neg for FloatClass {
@@ -216,6 +449,8 @@ pub struct NaNType {
     pub canonical_nan_mantissa_msb: bool,
     pub canonical_nan_mantissa_second_to_msb: bool,
     pub canonical_nan_mantissa_rest: bool,
+    pub nan_propagation_mode: NaNPropagationMode,
+    pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
 }
 
 impl Default for NaNType {
@@ -224,70 +459,120 @@ impl Default for NaNType {
     }
 }
 
-impl fmt::Debug for NaNType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if *self == NaNType::RISC_V {
-            f.write_str("NaNType::RISC_V")
-        } else if *self == NaNType::X86 {
-            f.write_str("NaNType::X86")
-        } else if *self == NaNType::SPARC {
-            f.write_str("NaNType::SPARC")
-        } else if *self == NaNType::HPPA {
-            f.write_str("NaNType::HPPA")
-        } else if *self == NaNType::MIPS_LEGACY {
-            f.write_str("NaNType::MIPS_LEGACY")
-        } else {
-            f.debug_struct("NaNType")
-                .field("canonical_nan_sign", &self.canonical_nan_sign)
-                .field(
-                    "canonical_nan_mantissa_msb",
-                    &self.canonical_nan_mantissa_msb,
-                )
-                .field(
-                    "canonical_nan_mantissa_second_to_msb",
-                    &self.canonical_nan_mantissa_second_to_msb,
-                )
-                .field(
-                    "canonical_nan_mantissa_rest",
-                    &self.canonical_nan_mantissa_rest,
-                )
-                .field("quiet_nan_format", &self.quiet_nan_format())
-                .finish()
+macro_rules! nan_type_constants {
+    (
+        $(
+            $(#[$meta:meta])*
+            pub const $ident:ident: NaNType = $init:expr;
+        )+
+    ) => {
+        impl NaNType {
+            $(
+                $(#[$meta])*
+                pub const $ident: NaNType = $init;
+            )+
         }
-    }
+
+        impl fmt::Debug for NaNType {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                $(if *self == NaNType::$ident {
+                    f.write_str(concat!("NaNType::", stringify!($ident)))
+                } else)+ {
+                    f.debug_struct("NaNType")
+                        .field("canonical_nan_sign", &self.canonical_nan_sign)
+                        .field(
+                            "canonical_nan_mantissa_msb",
+                            &self.canonical_nan_mantissa_msb,
+                        )
+                        .field(
+                            "canonical_nan_mantissa_second_to_msb",
+                            &self.canonical_nan_mantissa_second_to_msb,
+                        )
+                        .field(
+                            "canonical_nan_mantissa_rest",
+                            &self.canonical_nan_mantissa_rest,
+                        )
+                        .field(
+                            "nan_propagation_mode",
+                            &self.nan_propagation_mode,
+                        )
+                        .field("quiet_nan_format", &self.quiet_nan_format())
+                        .finish()
+                }
+            }
+        }
+    };
 }
 
-impl NaNType {
+nan_type_constants! {
+    pub const ARM: NaNType = NaNType {
+        canonical_nan_sign: Sign::Positive,
+        canonical_nan_mantissa_msb: true,
+        canonical_nan_mantissa_second_to_msb: false,
+        canonical_nan_mantissa_rest: false,
+        nan_propagation_mode: NaNPropagationMode::ThirdFirstSecondPreferringSNaN,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
+    };
     pub const RISC_V: NaNType = NaNType {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
+        nan_propagation_mode: NaNPropagationMode::AlwaysCanonical,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
-    pub const X86: NaNType = NaNType {
+    pub const POWER: NaNType = NaNType {
+        canonical_nan_sign: Sign::Positive,
+        canonical_nan_mantissa_msb: true,
+        canonical_nan_mantissa_second_to_msb: false,
+        canonical_nan_mantissa_rest: false,
+        nan_propagation_mode: NaNPropagationMode::FirstThirdSecond,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
+    };
+    pub const MIPS_2008: NaNType = NaNType {
+        canonical_nan_sign: Sign::Positive,
+        canonical_nan_mantissa_msb: true,
+        canonical_nan_mantissa_second_to_msb: false,
+        canonical_nan_mantissa_rest: false,
+        nan_propagation_mode: NaNPropagationMode::ThirdFirstSecondPreferringSNaN,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
+    };
+    // X86_X87 is not implemented
+    pub const X86_SSE: NaNType = NaNType {
         canonical_nan_sign: Sign::Negative,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
+        nan_propagation_mode: NaNPropagationMode::FirstSecondThird,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
     pub const SPARC: NaNType = NaNType {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: true,
+        nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
     pub const HPPA: NaNType = NaNType {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: false,
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: false,
+        nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
     pub const MIPS_LEGACY: NaNType = NaNType {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: false,
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: true,
+        nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
     };
+}
+
+impl NaNType {
     pub const fn default() -> Self {
         Self::RISC_V
     }
@@ -554,7 +839,7 @@ impl fmt::Debug for FloatProperties {
     }
 }
 
-pub trait FloatTraits: Clone + fmt::Debug {
+pub trait FloatTraits: Clone + fmt::Debug + PartialEq {
     type Bits: FloatBitsType;
     fn properties(&self) -> FloatProperties;
 }
@@ -914,73 +1199,73 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             Sign::Negative => -retval,
         }
     }
-    pub fn is_zero(&self) -> bool {
-        match self.class() {
-            FloatClass::NegativeZero | FloatClass::PositiveZero => true,
-            _ => false,
-        }
-    }
-    pub fn is_positive_zero(&self) -> bool {
-        self.class() == FloatClass::PositiveZero
-    }
-    pub fn is_negative_zero(&self) -> bool {
-        self.class() == FloatClass::NegativeZero
-    }
-    pub fn is_finite(&self) -> bool {
-        match self.class() {
-            FloatClass::NegativeZero
-            | FloatClass::NegativeSubnormal
-            | FloatClass::NegativeNormal
-            | FloatClass::PositiveZero
-            | FloatClass::PositiveSubnormal
-            | FloatClass::PositiveNormal => true,
-            _ => false,
-        }
-    }
-    pub fn is_infinity(&self) -> bool {
-        match self.class() {
-            FloatClass::NegativeInfinity | FloatClass::PositiveInfinity => true,
-            _ => false,
-        }
-    }
-    pub fn is_nan(&self) -> bool {
-        match self.class() {
-            FloatClass::QuietNaN | FloatClass::SignalingNaN => true,
-            _ => false,
-        }
-    }
-    pub fn is_positive_infinity(&self) -> bool {
-        self.class() == FloatClass::PositiveInfinity
-    }
+    #[inline]
     pub fn is_negative_infinity(&self) -> bool {
-        self.class() == FloatClass::NegativeInfinity
+        self.class().is_negative_infinity()
     }
-    pub fn is_normal(&self) -> bool {
-        match self.class() {
-            FloatClass::NegativeNormal | FloatClass::PositiveNormal => true,
-            _ => false,
-        }
+    #[inline]
+    pub fn is_negative_normal(&self) -> bool {
+        self.class().is_negative_normal()
     }
-    pub fn is_subnormal(&self) -> bool {
-        match self.class() {
-            FloatClass::NegativeSubnormal | FloatClass::PositiveSubnormal => true,
-            _ => false,
-        }
+    #[inline]
+    pub fn is_negative_subnormal(&self) -> bool {
+        self.class().is_negative_subnormal()
     }
-    pub fn is_subnormal_or_zero(&self) -> bool {
-        match self.class() {
-            FloatClass::NegativeSubnormal
-            | FloatClass::PositiveSubnormal
-            | FloatClass::NegativeZero
-            | FloatClass::PositiveZero => true,
-            _ => false,
-        }
+    #[inline]
+    pub fn is_negative_zero(&self) -> bool {
+        self.class().is_negative_zero()
     }
-    pub fn is_signaling_nan(&self) -> bool {
-        self.class() == FloatClass::SignalingNaN
+    #[inline]
+    pub fn is_positive_infinity(&self) -> bool {
+        self.class().is_positive_infinity()
     }
+    #[inline]
+    pub fn is_positive_normal(&self) -> bool {
+        self.class().is_positive_normal()
+    }
+    #[inline]
+    pub fn is_positive_subnormal(&self) -> bool {
+        self.class().is_positive_subnormal()
+    }
+    #[inline]
+    pub fn is_positive_zero(&self) -> bool {
+        self.class().is_positive_zero()
+    }
+    #[inline]
     pub fn is_quiet_nan(&self) -> bool {
-        self.class() == FloatClass::QuietNaN
+        self.class().is_quiet_nan()
+    }
+    #[inline]
+    pub fn is_signaling_nan(&self) -> bool {
+        self.class().is_signaling_nan()
+    }
+    #[inline]
+    pub fn is_infinity(&self) -> bool {
+        self.class().is_infinity()
+    }
+    #[inline]
+    pub fn is_normal(&self) -> bool {
+        self.class().is_normal()
+    }
+    #[inline]
+    pub fn is_subnormal(&self) -> bool {
+        self.class().is_subnormal()
+    }
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.class().is_zero()
+    }
+    #[inline]
+    pub fn is_nan(&self) -> bool {
+        self.class().is_nan()
+    }
+    #[inline]
+    pub fn is_finite(&self) -> bool {
+        self.class().is_finite()
+    }
+    #[inline]
+    pub fn is_subnormal_or_zero(&self) -> bool {
+        self.class().is_subnormal_or_zero()
     }
     pub fn to_ratio(&self) -> Option<Ratio<BigInt>> {
         if !self.is_finite() {
@@ -1292,6 +1577,105 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     {
         Self::from_real_algebraic_number_with_traits(value, rounding_mode, fp_state, FT::default())
     }
+    fn add_or_sub(
+        &self,
+        rhs: &Self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+        is_sub: bool,
+    ) -> Self {
+        assert_eq!(self.traits, rhs.traits);
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let self_class = self.class();
+        let mut rhs_class = rhs.class();
+        if is_sub {
+            rhs_class = -rhs_class;
+        }
+        match (self_class, rhs_class) {
+            (FloatClass::SignalingNaN, _)
+            | (FloatClass::QuietNaN, _)
+            | (_, FloatClass::SignalingNaN)
+            | (_, FloatClass::QuietNaN) => {
+                if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
+                    fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                }
+                match BinaryNaNPropagationMode::from(properties.nan_type.nan_propagation_mode)
+                    .calculate_propagation_results(self_class, rhs_class)
+                {
+                    BinaryNaNPropagationResults::First => self.to_quiet_nan(),
+                    BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
+                    BinaryNaNPropagationResults::Canonical => {
+                        Self::quiet_nan_with_traits(self.traits.clone())
+                    }
+                }
+            }
+            (FloatClass::NegativeInfinity, FloatClass::PositiveInfinity)
+            | (FloatClass::PositiveInfinity, FloatClass::NegativeInfinity) => {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                Self::quiet_nan_with_traits(self.traits.clone())
+            }
+            (FloatClass::PositiveInfinity, _) | (_, FloatClass::PositiveInfinity) => {
+                Self::positive_infinity_with_traits(self.traits.clone())
+            }
+            (FloatClass::NegativeInfinity, _) | (_, FloatClass::NegativeInfinity) => {
+                Self::negative_infinity_with_traits(self.traits.clone())
+            }
+            (FloatClass::PositiveZero, FloatClass::PositiveZero) => {
+                Self::positive_zero_with_traits(self.traits.clone())
+            }
+            (FloatClass::NegativeZero, FloatClass::NegativeZero) => {
+                Self::negative_zero_with_traits(self.traits.clone())
+            }
+            _ => {
+                let lhs_value = self.to_real_algebraic_number().expect("known to be finite");
+                let rhs_value = rhs.to_real_algebraic_number().expect("known to be finite");
+                let result = if is_sub {
+                    lhs_value - rhs_value
+                } else {
+                    lhs_value + rhs_value
+                };
+                if result.is_zero() {
+                    match rounding_mode {
+                        RoundingMode::TiesToEven
+                        | RoundingMode::TiesToAway
+                        | RoundingMode::TowardPositive
+                        | RoundingMode::TowardZero => {
+                            Self::positive_zero_with_traits(self.traits.clone())
+                        }
+                        RoundingMode::TowardNegative => {
+                            Self::negative_zero_with_traits(self.traits.clone())
+                        }
+                    }
+                } else {
+                    Self::from_real_algebraic_number_with_traits(
+                        &result,
+                        Some(rounding_mode),
+                        Some(fp_state),
+                        self.traits.clone(),
+                    )
+                }
+            }
+        }
+    }
+    pub fn add(
+        &self,
+        rhs: &Self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        self.add_or_sub(rhs, rounding_mode, fp_state, false)
+    }
+    pub fn sub(
+        &self,
+        rhs: &Self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        self.add_or_sub(rhs, rounding_mode, fp_state, true)
+    }
 }
 
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT> {
@@ -1399,9 +1783,12 @@ mod tests {
         assert_eq!(
             &format!(
                 "{:?}",
-                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::X86))
+                F16WithNaNType::from_bits_and_traits(
+                    0x1234,
+                    F16WithNaNTypeTraits(NaNType::X86_SSE)
+                )
             ),
-            "Float { traits: F16WithNaNTypeTraits(NaNType::X86), \
+            "Float { traits: F16WithNaNTypeTraits(NaNType::X86_SSE), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \
              mantissa_field: 0x234, class: PositiveNormal }",
         );
@@ -1548,6 +1935,8 @@ mod tests {
         test_case!(F16::from_bits(0xFE00), None);
         test_case!(F16::from_bits(0xFFFF), None);
     }
+
+    // FIXME: add tests for add and sub
 
     // FIXME: add more tests
 }
