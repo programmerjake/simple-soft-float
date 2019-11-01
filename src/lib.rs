@@ -646,6 +646,111 @@ impl FloatTraits for F128WithNaNTypeTraits {
     }
 }
 
+struct RoundedMantissa {
+    inexact: bool,
+    exponent: i64,
+    mantissa: BigInt,
+}
+
+impl RoundedMantissa {
+    fn new(
+        value: &RealAlgebraicNumber,
+        exponent: i64,
+        sign: Sign,
+        rounding_mode: RoundingMode,
+        properties: FloatProperties,
+        max_mantissa: &BigInt,
+    ) -> Self {
+        assert!(!value.is_negative());
+        let ulp_shift = exponent
+            - properties
+                .fraction_width()
+                .to_i64()
+                .expect("fraction_width doesn't fit in i64");
+        let ulp = if ulp_shift < 0 {
+            let shift = (-ulp_shift)
+                .to_usize()
+                .expect("ulp_shift doesn't fit in usize");
+            Ratio::new(BigInt::one(), BigInt::one() << shift)
+        } else {
+            Ratio::from(
+                BigInt::one() << ulp_shift.to_usize().expect("exponent doesn't fit in usize"),
+            )
+        };
+        let value_in_ulps = value / RealAlgebraicNumber::from(ulp);
+        let lower_float_exponent = exponent;
+        let lower_float_mantissa = value_in_ulps.to_integer_floor();
+        let remainder_in_ulps =
+            value_in_ulps - RealAlgebraicNumber::from(lower_float_mantissa.clone());
+        assert!(!lower_float_mantissa.is_negative());
+        assert!(lower_float_mantissa <= *max_mantissa);
+        if remainder_in_ulps.is_zero() {
+            Self {
+                inexact: false,
+                exponent: lower_float_exponent,
+                mantissa: lower_float_mantissa,
+            }
+        } else {
+            let mut upper_float_mantissa = &lower_float_mantissa + 1i32;
+            let mut upper_float_exponent = lower_float_exponent;
+            if upper_float_mantissa > *max_mantissa {
+                upper_float_mantissa >>= 1;
+                upper_float_exponent += 1;
+            }
+            match (rounding_mode, sign) {
+                (RoundingMode::TiesToEven, _) | (RoundingMode::TiesToAway, _) => {
+                    match remainder_in_ulps.cmp(&RealAlgebraicNumber::from(Ratio::new(1, 2))) {
+                        Ordering::Less => Self {
+                            inexact: true,
+                            exponent: lower_float_exponent,
+                            mantissa: lower_float_mantissa,
+                        },
+                        Ordering::Equal => {
+                            if rounding_mode == RoundingMode::TiesToAway
+                                || lower_float_mantissa.is_odd()
+                            {
+                                Self {
+                                    inexact: true,
+                                    exponent: upper_float_exponent,
+                                    mantissa: upper_float_mantissa,
+                                }
+                            } else {
+                                Self {
+                                    inexact: true,
+                                    exponent: lower_float_exponent,
+                                    mantissa: lower_float_mantissa,
+                                }
+                            }
+                        }
+                        Ordering::Greater => Self {
+                            inexact: true,
+                            exponent: upper_float_exponent,
+                            mantissa: upper_float_mantissa,
+                        },
+                    }
+                }
+                (RoundingMode::TowardZero, _) => Self {
+                    inexact: true,
+                    exponent: lower_float_exponent,
+                    mantissa: lower_float_mantissa,
+                },
+                (RoundingMode::TowardNegative, Sign::Negative)
+                | (RoundingMode::TowardPositive, Sign::Positive) => Self {
+                    inexact: true,
+                    exponent: upper_float_exponent,
+                    mantissa: upper_float_mantissa,
+                },
+                (RoundingMode::TowardNegative, Sign::Positive)
+                | (RoundingMode::TowardPositive, Sign::Negative) => Self {
+                    inexact: true,
+                    exponent: lower_float_exponent,
+                    mantissa: lower_float_mantissa,
+                },
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct Float<FT: FloatTraits> {
     traits: FT,
@@ -1050,114 +1155,6 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     {
         Self::signed_max_normal_with_traits(sign, FT::default())
     }
-}
-
-struct RoundedMantissa {
-    inexact: bool,
-    exponent: i64,
-    mantissa: BigInt,
-}
-
-impl RoundedMantissa {
-    fn new(
-        value: &RealAlgebraicNumber,
-        exponent: i64,
-        sign: Sign,
-        rounding_mode: RoundingMode,
-        properties: FloatProperties,
-        max_mantissa: &BigInt,
-    ) -> Self {
-        assert!(!value.is_negative());
-        let ulp_shift = exponent
-            - properties
-                .fraction_width()
-                .to_i64()
-                .expect("fraction_width doesn't fit in i64");
-        let ulp = if ulp_shift < 0 {
-            let shift = (-ulp_shift)
-                .to_usize()
-                .expect("ulp_shift doesn't fit in usize");
-            Ratio::new(BigInt::one(), BigInt::one() << shift)
-        } else {
-            Ratio::from(
-                BigInt::one() << ulp_shift.to_usize().expect("exponent doesn't fit in usize"),
-            )
-        };
-        let value_in_ulps = value / RealAlgebraicNumber::from(ulp);
-        let lower_float_exponent = exponent;
-        let lower_float_mantissa = value_in_ulps.to_integer_floor();
-        let remainder_in_ulps =
-            value_in_ulps - RealAlgebraicNumber::from(lower_float_mantissa.clone());
-        assert!(!lower_float_mantissa.is_negative());
-        assert!(lower_float_mantissa <= *max_mantissa);
-        if remainder_in_ulps.is_zero() {
-            Self {
-                inexact: false,
-                exponent: lower_float_exponent,
-                mantissa: lower_float_mantissa,
-            }
-        } else {
-            let mut upper_float_mantissa = &lower_float_mantissa + 1i32;
-            let mut upper_float_exponent = lower_float_exponent;
-            if upper_float_mantissa > *max_mantissa {
-                upper_float_mantissa >>= 1;
-                upper_float_exponent += 1;
-            }
-            match (rounding_mode, sign) {
-                (RoundingMode::TiesToEven, _) | (RoundingMode::TiesToAway, _) => {
-                    match remainder_in_ulps.cmp(&RealAlgebraicNumber::from(Ratio::new(1, 2))) {
-                        Ordering::Less => Self {
-                            inexact: true,
-                            exponent: lower_float_exponent,
-                            mantissa: lower_float_mantissa,
-                        },
-                        Ordering::Equal => {
-                            if rounding_mode == RoundingMode::TiesToAway
-                                || lower_float_mantissa.is_odd()
-                            {
-                                Self {
-                                    inexact: true,
-                                    exponent: upper_float_exponent,
-                                    mantissa: upper_float_mantissa,
-                                }
-                            } else {
-                                Self {
-                                    inexact: true,
-                                    exponent: lower_float_exponent,
-                                    mantissa: lower_float_mantissa,
-                                }
-                            }
-                        }
-                        Ordering::Greater => Self {
-                            inexact: true,
-                            exponent: upper_float_exponent,
-                            mantissa: upper_float_mantissa,
-                        },
-                    }
-                }
-                (RoundingMode::TowardZero, _) => Self {
-                    inexact: true,
-                    exponent: lower_float_exponent,
-                    mantissa: lower_float_mantissa,
-                },
-                (RoundingMode::TowardNegative, Sign::Negative)
-                | (RoundingMode::TowardPositive, Sign::Positive) => Self {
-                    inexact: true,
-                    exponent: upper_float_exponent,
-                    mantissa: upper_float_mantissa,
-                },
-                (RoundingMode::TowardNegative, Sign::Positive)
-                | (RoundingMode::TowardPositive, Sign::Negative) => Self {
-                    inexact: true,
-                    exponent: lower_float_exponent,
-                    mantissa: lower_float_mantissa,
-                },
-            }
-        }
-    }
-}
-
-impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn from_real_algebraic_number_with_traits(
         value: &RealAlgebraicNumber,
         rounding_mode: Option<RoundingMode>,
