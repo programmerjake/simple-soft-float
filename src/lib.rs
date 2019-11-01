@@ -496,6 +496,10 @@ macro_rules! nan_type_constants {
                             "nan_propagation_mode",
                             &self.nan_propagation_mode,
                         )
+                        .field(
+                            "fma_inf_zero_qnan_result",
+                            &self.fma_inf_zero_qnan_result,
+                        )
                         .field("quiet_nan_format", &self.quiet_nan_format())
                         .finish()
                 }
@@ -1827,7 +1831,10 @@ mod tests {
             "Float { traits: F16WithNaNTypeTraits(NaNType { \
              canonical_nan_sign: Negative, canonical_nan_mantissa_msb: false, \
              canonical_nan_mantissa_second_to_msb: true, \
-             canonical_nan_mantissa_rest: true, quiet_nan_format: MIPSLegacy }), \
+             canonical_nan_mantissa_rest: true, \
+             nan_propagation_mode: FirstSecondThirdPreferringSNaN, \
+             fma_inf_zero_qnan_result: CanonicalAndGenerateInvalid, \
+             quiet_nan_format: MIPSLegacy }), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \
              mantissa_field: 0x234, class: PositiveNormal }",
         );
