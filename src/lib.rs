@@ -1172,7 +1172,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             Sign::Positive
         } else if !properties.has_sign_bit() {
             if !value.is_zero() {
-                fp_state.status_flags |= StatusFlags::INEXACT | StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags |= StatusFlags::INEXACT | StatusFlags::UNDERFLOW;
             }
             return Self::positive_zero_with_traits(traits);
         } else {
