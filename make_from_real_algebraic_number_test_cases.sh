@@ -99,32 +99,37 @@ function write_test_cases() {
             printf -v mantissa_str "0x%X" $mantissa
         fi
         printf -v result "0x%04X" $((result))
-        echo "        test_case($mantissa_str, $exponent, $rounding_mode, $exception_handling_mode, $tininess_detection_mode, $result, $flags);"
+        echo "    test_case($mantissa_str, $exponent, $rounding_mode, $exception_handling_mode, $tininess_detection_mode, $result, $flags);"
     done
 }
 
 for rounding_mode in TiesToEven TowardZero TowardNegative TowardPositive TiesToAway; do
+    echo "#[test]"
+    echo "#[rustfmt::skip]"
+    lc_rounding_mode="`echo "$rounding_mode" | sed 's/\([^A-Z]\)\([A-Z]\)/\1_\2/g; s/.*/\L&/'`"
+    echo "fn test_from_real_algebraic_number_$lc_rounding_mode() {"
     for tininess_detection_mode in BeforeRounding AfterRounding; do
         for exception_handling_mode in DefaultIgnoreExactUnderflow DefaultSignalExactUnderflow; do
-            echo "        // test the values right around zero for $rounding_mode $exception_handling_mode $tininess_detection_mode"
+            echo "    // test the values right around zero for $rounding_mode $exception_handling_mode $tininess_detection_mode"
             write_test_cases -0x20 0x20 0x4 -28 $rounding_mode $exception_handling_mode $tininess_detection_mode
             echo
-            echo "        // test the values at the transition between subnormal and normal for $rounding_mode $exception_handling_mode $tininess_detection_mode"
+            echo "    // test the values at the transition between subnormal and normal for $rounding_mode $exception_handling_mode $tininess_detection_mode"
             write_test_cases 0x3FE0 0x4020 0x2 -28 $rounding_mode $exception_handling_mode $tininess_detection_mode
             write_test_cases -0x4020 -0x3FE0 0x2 -28 $rounding_mode $exception_handling_mode $tininess_detection_mode
             echo
         done
     done
-    echo "        // test the values right around 1 and -1 for $rounding_mode"
+    echo "    // test the values right around 1 and -1 for $rounding_mode"
     write_test_cases -0x4020 -0x3FE0 0x4 -14 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
     write_test_cases 0x3FE0 0x4020 0x4 -14 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
     echo
-    echo "        // test the values right around max normal for $rounding_mode"
+    echo "    // test the values right around max normal for $rounding_mode"
     write_test_cases -0x4010 -0x3FF0 0x2 2 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
     write_test_cases 0x3FF0 0x4010 0x2 2 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
     echo
-    echo "        // test the values much larger than max normal for $rounding_mode"
+    echo "    // test the values much larger than max normal for $rounding_mode"
     write_test_cases -1 -1 1 20 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
     write_test_cases 1 1 1 20 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
+    echo "}"
     echo
 done
