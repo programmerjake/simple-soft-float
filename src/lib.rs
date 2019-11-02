@@ -27,7 +27,9 @@ use std::ops::ShlAssign;
 use std::ops::Shr;
 use std::ops::ShrAssign;
 
+#[cfg(test)]
 mod binary_op_test_cases;
+#[cfg(test)]
 mod from_real_algebraic_number_test_cases;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
