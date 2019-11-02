@@ -27,6 +27,7 @@ use std::ops::ShlAssign;
 use std::ops::Shr;
 use std::ops::ShrAssign;
 
+mod binary_op_test_cases;
 mod from_real_algebraic_number_test_cases;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -1942,8 +1943,6 @@ mod tests {
         test_case!(F16::from_bits(0xFE00), None);
         test_case!(F16::from_bits(0xFFFF), None);
     }
-
-    // FIXME: add tests for add and sub
 
     // FIXME: add more tests
 }
