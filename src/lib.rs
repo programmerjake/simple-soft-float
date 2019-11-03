@@ -21,6 +21,8 @@ use std::ops::BitOr;
 use std::ops::BitOrAssign;
 use std::ops::BitXor;
 use std::ops::BitXorAssign;
+use std::ops::Mul;
+use std::ops::MulAssign;
 use std::ops::Neg;
 use std::ops::Shl;
 use std::ops::ShlAssign;
@@ -37,6 +39,32 @@ mod from_real_algebraic_number_test_cases;
 pub enum Sign {
     Positive = 0,
     Negative = 1,
+}
+
+impl Neg for Sign {
+    type Output = Self;
+    fn neg(self) -> Self {
+        match self {
+            Self::Positive => Self::Negative,
+            Self::Negative => Self::Positive,
+        }
+    }
+}
+
+impl Mul for Sign {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self {
+        match self {
+            Self::Positive => rhs,
+            Self::Negative => -rhs,
+        }
+    }
+}
+
+impl MulAssign for Sign {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = *self * rhs;
+    }
 }
 
 pub trait FloatBitsType:
@@ -320,6 +348,35 @@ pub enum FloatClass {
 }
 
 impl FloatClass {
+    #[inline]
+    pub fn sign(self) -> Option<Sign> {
+        match self {
+            FloatClass::NegativeInfinity
+            | FloatClass::NegativeNormal
+            | FloatClass::NegativeSubnormal
+            | FloatClass::NegativeZero => Some(Sign::Negative),
+            FloatClass::PositiveInfinity
+            | FloatClass::PositiveNormal
+            | FloatClass::PositiveSubnormal
+            | FloatClass::PositiveZero => Some(Sign::Positive),
+            FloatClass::QuietNaN | FloatClass::SignalingNaN => None,
+        }
+    }
+    #[inline]
+    pub fn abs(self) -> Self {
+        match self {
+            FloatClass::NegativeInfinity => FloatClass::PositiveInfinity,
+            FloatClass::NegativeNormal => FloatClass::PositiveNormal,
+            FloatClass::NegativeSubnormal => FloatClass::PositiveSubnormal,
+            FloatClass::NegativeZero => FloatClass::PositiveZero,
+            FloatClass::PositiveInfinity => FloatClass::PositiveInfinity,
+            FloatClass::PositiveNormal => FloatClass::PositiveNormal,
+            FloatClass::PositiveSubnormal => FloatClass::PositiveSubnormal,
+            FloatClass::PositiveZero => FloatClass::PositiveZero,
+            FloatClass::QuietNaN => FloatClass::QuietNaN,
+            FloatClass::SignalingNaN => FloatClass::SignalingNaN,
+        }
+    }
     #[inline]
     pub fn is_negative_infinity(self) -> bool {
         self == FloatClass::NegativeInfinity
@@ -1682,6 +1739,103 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         fp_state: Option<&mut FPState>,
     ) -> Self {
         self.add_or_sub(rhs, rounding_mode, fp_state, true)
+    }
+    pub fn mul(
+        &self,
+        rhs: &Self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        assert_eq!(self.traits, rhs.traits);
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let self_class = self.class();
+        let rhs_class = rhs.class();
+        let result_sign = self.sign() * rhs.sign();
+        if self_class.is_nan() || rhs_class.is_nan() {
+            if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            }
+            match BinaryNaNPropagationMode::from(properties.nan_type.nan_propagation_mode)
+                .calculate_propagation_results(self_class, rhs_class)
+            {
+                BinaryNaNPropagationResults::First => self.to_quiet_nan(),
+                BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
+                BinaryNaNPropagationResults::Canonical => {
+                    Self::quiet_nan_with_traits(self.traits.clone())
+                }
+            }
+        } else if (self_class.is_infinity() && rhs_class.is_zero())
+            || (self_class.is_zero() && rhs_class.is_infinity())
+        {
+            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            Self::quiet_nan_with_traits(self.traits.clone())
+        } else if self_class.is_zero() || rhs_class.is_zero() {
+            Self::signed_zero_with_traits(result_sign, self.traits.clone())
+        } else if self_class.is_infinity() || rhs_class.is_infinity() {
+            Self::signed_infinity_with_traits(result_sign, self.traits.clone())
+        } else {
+            let lhs_value = self.to_real_algebraic_number().expect("known to be finite");
+            let rhs_value = rhs.to_real_algebraic_number().expect("known to be finite");
+            Self::from_real_algebraic_number_with_traits(
+                &(lhs_value * rhs_value),
+                Some(rounding_mode),
+                Some(fp_state),
+                self.traits.clone(),
+            )
+        }
+    }
+    pub fn div(
+        &self,
+        rhs: &Self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        assert_eq!(self.traits, rhs.traits);
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let self_class = self.class();
+        let rhs_class = rhs.class();
+        let result_sign = self.sign() * rhs.sign();
+        if self_class.is_nan() || rhs_class.is_nan() {
+            if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            }
+            match BinaryNaNPropagationMode::from(properties.nan_type.nan_propagation_mode)
+                .calculate_propagation_results(self_class, rhs_class)
+            {
+                BinaryNaNPropagationResults::First => self.to_quiet_nan(),
+                BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
+                BinaryNaNPropagationResults::Canonical => {
+                    Self::quiet_nan_with_traits(self.traits.clone())
+                }
+            }
+        } else if (self_class.is_infinity() && rhs_class.is_infinity())
+            || (self_class.is_zero() && rhs_class.is_zero())
+        {
+            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            Self::quiet_nan_with_traits(self.traits.clone())
+        } else if self_class.is_zero() || rhs_class.is_infinity() {
+            Self::signed_zero_with_traits(result_sign, self.traits.clone())
+        } else if self_class.is_infinity() {
+            Self::signed_infinity_with_traits(result_sign, self.traits.clone())
+        } else if rhs_class.is_zero() {
+            fp_state.status_flags |= StatusFlags::DIVISION_BY_ZERO;
+            Self::signed_infinity_with_traits(result_sign, self.traits.clone())
+        } else {
+            let lhs_value = self.to_real_algebraic_number().expect("known to be finite");
+            let rhs_value = rhs.to_real_algebraic_number().expect("known to be finite");
+            Self::from_real_algebraic_number_with_traits(
+                &(lhs_value / rhs_value),
+                Some(rounding_mode),
+                Some(fp_state),
+                self.traits.clone(),
+            )
+        }
     }
 }
 

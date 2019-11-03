@@ -89,11 +89,14 @@ function write_test_case() {
 
 test_case_list=(0x0000 0x0001 0x03FF 0x0400 0x3C00 0x3C01 0x7BFF 0x7C00 0x7C01 0x7DFF 0x7E00 0x7FFF)
 test_case_list+=(0x8000 0x8001 0x83FF 0x8400 0xBC00 0xBC01 0xFBFF 0xFC00 0xFC01 0xFDFF 0xFE00 0xFFFF)
+ops=(add sub mul div)
+rounding_modes=(TiesToEven TowardZero TowardNegative TowardPositive TiesToAway)
+tininess_detection_modes=(BeforeRounding AfterRounding)
 
 total=0
-for op in add sub; do
-    for rounding_mode in TiesToEven TowardZero TowardNegative TowardPositive TiesToAway; do
-        for tininess_detection_mode in BeforeRounding AfterRounding; do
+for op in "${ops[@]}"; do
+    for rounding_mode in "${rounding_modes[@]}"; do
+        for tininess_detection_mode in "${tininess_detection_modes[@]}"; do
             for value1 in "${test_case_list[@]}"; do
                 ((total += 1))
             done
@@ -102,13 +105,13 @@ for op in add sub; do
 done
 
 step=0
-for op in add sub; do
-    for rounding_mode in TiesToEven TowardZero TowardNegative TowardPositive TiesToAway; do
+for op in "${ops[@]}"; do
+    for rounding_mode in "${rounding_modes[@]}"; do
         echo "#[test]"
         lc_rounding_mode="`echo "$rounding_mode" | sed 's/\([^A-Z]\)\([A-Z]\)/\1_\2/g; s/.*/\L&/'`"
         echo "fn test_${op}_$lc_rounding_mode() {"
         first=1
-        for tininess_detection_mode in BeforeRounding AfterRounding; do
+        for tininess_detection_mode in "${tininess_detection_modes[@]}"; do
             for value1 in "${test_case_list[@]}"; do
                 if ((first)); then
                     first=0
