@@ -108,6 +108,7 @@ step=0
 for op in "${ops[@]}"; do
     for rounding_mode in "${rounding_modes[@]}"; do
         echo "#[test]"
+        echo "#[rustfmt::skip]"
         lc_rounding_mode="`echo "$rounding_mode" | sed 's/\([^A-Z]\)\([A-Z]\)/\1_\2/g; s/.*/\L&/'`"
         echo "fn test_${op}_$lc_rounding_mode() {"
         first=1

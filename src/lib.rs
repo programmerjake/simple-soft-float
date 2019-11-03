@@ -33,6 +33,8 @@ use std::ops::ShrAssign;
 mod binary_op_test_cases;
 #[cfg(test)]
 mod from_real_algebraic_number_test_cases;
+#[cfg(test)]
+mod mul_add_test_cases;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 #[repr(u8)]
@@ -310,6 +312,189 @@ impl Default for NaNPropagationMode {
     }
 }
 
+impl NaNPropagationMode {
+    pub fn calculate_propagation_results(
+        self,
+        first_class: FloatClass,
+        second_class: FloatClass,
+        third_class: FloatClass,
+    ) -> NaNPropagationResults {
+        use NaNPropagationMode::*;
+        use NaNPropagationResults::*;
+        match self {
+            AlwaysCanonical => Canonical,
+            FirstSecondThird => {
+                if first_class.is_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else if third_class.is_nan() {
+                    Third
+                } else {
+                    Canonical
+                }
+            }
+            FirstSecondThirdPreferringSNaN => {
+                if first_class.is_signaling_nan() {
+                    First
+                } else if second_class.is_signaling_nan() {
+                    Second
+                } else if third_class.is_signaling_nan() {
+                    Third
+                } else if first_class.is_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else if third_class.is_nan() {
+                    Third
+                } else {
+                    Canonical
+                }
+            }
+            FirstThirdSecond => {
+                if first_class.is_nan() {
+                    First
+                } else if third_class.is_nan() {
+                    Third
+                } else if second_class.is_nan() {
+                    Second
+                } else {
+                    Canonical
+                }
+            }
+            FirstThirdSecondPreferringSNaN => {
+                if first_class.is_signaling_nan() {
+                    First
+                } else if third_class.is_signaling_nan() {
+                    Third
+                } else if second_class.is_signaling_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else if third_class.is_nan() {
+                    Third
+                } else if second_class.is_nan() {
+                    Second
+                } else {
+                    Canonical
+                }
+            }
+            SecondFirstThird => {
+                if second_class.is_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else if third_class.is_nan() {
+                    Third
+                } else {
+                    Canonical
+                }
+            }
+            SecondFirstThirdPreferringSNaN => {
+                if second_class.is_signaling_nan() {
+                    Second
+                } else if first_class.is_signaling_nan() {
+                    First
+                } else if third_class.is_signaling_nan() {
+                    Third
+                } else if second_class.is_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else if third_class.is_nan() {
+                    Third
+                } else {
+                    Canonical
+                }
+            }
+            SecondThirdFirst => {
+                if second_class.is_nan() {
+                    Second
+                } else if third_class.is_nan() {
+                    Third
+                } else if first_class.is_nan() {
+                    First
+                } else {
+                    Canonical
+                }
+            }
+            SecondThirdFirstPreferringSNaN => {
+                if second_class.is_signaling_nan() {
+                    Second
+                } else if third_class.is_signaling_nan() {
+                    Third
+                } else if first_class.is_signaling_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else if third_class.is_nan() {
+                    Third
+                } else if first_class.is_nan() {
+                    First
+                } else {
+                    Canonical
+                }
+            }
+            ThirdFirstSecond => {
+                if third_class.is_nan() {
+                    Third
+                } else if first_class.is_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else {
+                    Canonical
+                }
+            }
+            ThirdFirstSecondPreferringSNaN => {
+                if third_class.is_signaling_nan() {
+                    Third
+                } else if first_class.is_signaling_nan() {
+                    First
+                } else if second_class.is_signaling_nan() {
+                    Second
+                } else if third_class.is_nan() {
+                    Third
+                } else if first_class.is_nan() {
+                    First
+                } else if second_class.is_nan() {
+                    Second
+                } else {
+                    Canonical
+                }
+            }
+            ThirdSecondFirst => {
+                if third_class.is_nan() {
+                    Third
+                } else if second_class.is_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else {
+                    Canonical
+                }
+            }
+            ThirdSecondFirstPreferringSNaN => {
+                if third_class.is_signaling_nan() {
+                    Third
+                } else if second_class.is_signaling_nan() {
+                    Second
+                } else if first_class.is_signaling_nan() {
+                    First
+                } else if third_class.is_nan() {
+                    Third
+                } else if second_class.is_nan() {
+                    Second
+                } else if first_class.is_nan() {
+                    First
+                } else {
+                    Canonical
+                }
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum FMAInfZeroQNaNResult {
     FollowNaNPropagationMode,
@@ -583,7 +768,7 @@ nan_type_constants! {
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
         nan_propagation_mode: NaNPropagationMode::AlwaysCanonical,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
     };
     pub const POWER: NaNType = NaNType {
         canonical_nan_sign: Sign::Positive,
@@ -1835,6 +2020,105 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 Some(fp_state),
                 self.traits.clone(),
             )
+        }
+    }
+    /// compute `(self * factor) + term`
+    pub fn mul_add(
+        &self,
+        factor: &Self,
+        term: &Self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        assert_eq!(self.traits, factor.traits);
+        assert_eq!(self.traits, term.traits);
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let self_class = self.class();
+        let factor_class = factor.class();
+        let term_class = term.class();
+        let product_sign = self.sign() * factor.sign();
+        let is_infinity_times_zero = (self_class.is_infinity() && factor_class.is_zero())
+            || (self_class.is_zero() && factor_class.is_infinity());
+        if self_class.is_nan() || factor_class.is_nan() || term_class.is_nan() {
+            if self_class.is_signaling_nan()
+                || factor_class.is_signaling_nan()
+                || term_class.is_signaling_nan()
+            {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            }
+            if is_infinity_times_zero && term_class.is_quiet_nan() {
+                match properties.nan_type.fma_inf_zero_qnan_result {
+                    FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid => {
+                        fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                        return Self::quiet_nan_with_traits(self.traits.clone());
+                    }
+                    FMAInfZeroQNaNResult::PropagateAndGenerateInvalid => {
+                        fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                        return term.clone();
+                    }
+                    FMAInfZeroQNaNResult::FollowNaNPropagationMode => {}
+                }
+            }
+            match properties
+                .nan_type
+                .nan_propagation_mode
+                .calculate_propagation_results(self_class, factor_class, term_class)
+            {
+                NaNPropagationResults::First => self.to_quiet_nan(),
+                NaNPropagationResults::Second => factor.to_quiet_nan(),
+                NaNPropagationResults::Third => term.to_quiet_nan(),
+                NaNPropagationResults::Canonical => {
+                    Self::quiet_nan_with_traits(self.traits.clone())
+                }
+            }
+        } else if is_infinity_times_zero {
+            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            return Self::quiet_nan_with_traits(self.traits.clone());
+        } else if (self_class.is_infinity() || factor_class.is_infinity())
+            && term_class.is_infinity()
+            && product_sign != term.sign()
+        {
+            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            return Self::quiet_nan_with_traits(self.traits.clone());
+        } else if (self_class.is_zero() || factor_class.is_zero())
+            && term_class.is_zero()
+            && product_sign == term.sign()
+        {
+            return term.clone();
+        } else if term_class.is_infinity() {
+            return term.clone();
+        } else if self_class.is_infinity() || factor_class.is_infinity() {
+            return Self::signed_infinity_with_traits(product_sign, self.traits.clone());
+        } else {
+            let self_value = self.to_real_algebraic_number().expect("known to be finite");
+            let factor_value = factor
+                .to_real_algebraic_number()
+                .expect("known to be finite");
+            let term_value = term.to_real_algebraic_number().expect("known to be finite");
+            let result = self_value * factor_value + term_value;
+            if result.is_zero() {
+                match rounding_mode {
+                    RoundingMode::TiesToEven
+                    | RoundingMode::TiesToAway
+                    | RoundingMode::TowardPositive
+                    | RoundingMode::TowardZero => {
+                        Self::positive_zero_with_traits(self.traits.clone())
+                    }
+                    RoundingMode::TowardNegative => {
+                        Self::negative_zero_with_traits(self.traits.clone())
+                    }
+                }
+            } else {
+                Self::from_real_algebraic_number_with_traits(
+                    &result,
+                    Some(rounding_mode),
+                    Some(fp_state),
+                    self.traits.clone(),
+                )
+            }
         }
     }
 }

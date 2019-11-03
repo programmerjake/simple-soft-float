@@ -64,6 +64,7 @@ macro_rules! binary_test_case {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_add_ties_to_even() {
     // testing F16::add(0x0000, X) with TiesToEven BeforeRounding
     binary_test_case!(0x0000, 0x0000, add, TiesToEven, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -1315,6 +1316,7 @@ fn test_add_ties_to_even() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_add_toward_zero() {
     // testing F16::add(0x0000, X) with TowardZero BeforeRounding
     binary_test_case!(0x0000, 0x0000, add, TowardZero, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -2566,6 +2568,7 @@ fn test_add_toward_zero() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_add_toward_negative() {
     // testing F16::add(0x0000, X) with TowardNegative BeforeRounding
     binary_test_case!(0x0000, 0x0000, add, TowardNegative, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -3817,6 +3820,7 @@ fn test_add_toward_negative() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_add_toward_positive() {
     // testing F16::add(0x0000, X) with TowardPositive BeforeRounding
     binary_test_case!(0x0000, 0x0000, add, TowardPositive, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -5068,6 +5072,7 @@ fn test_add_toward_positive() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_add_ties_to_away() {
     // testing F16::add(0x0000, X) with TiesToAway BeforeRounding
     binary_test_case!(0x0000, 0x0000, add, TiesToAway, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -6319,6 +6324,7 @@ fn test_add_ties_to_away() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_sub_ties_to_even() {
     // testing F16::sub(0x0000, X) with TiesToEven BeforeRounding
     binary_test_case!(0x0000, 0x0000, sub, TiesToEven, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -7570,6 +7576,7 @@ fn test_sub_ties_to_even() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_sub_toward_zero() {
     // testing F16::sub(0x0000, X) with TowardZero BeforeRounding
     binary_test_case!(0x0000, 0x0000, sub, TowardZero, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -8821,6 +8828,7 @@ fn test_sub_toward_zero() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_sub_toward_negative() {
     // testing F16::sub(0x0000, X) with TowardNegative BeforeRounding
     binary_test_case!(0x0000, 0x0000, sub, TowardNegative, BeforeRounding, 0x8000, StatusFlags::empty());
@@ -10072,6 +10080,7 @@ fn test_sub_toward_negative() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_sub_toward_positive() {
     // testing F16::sub(0x0000, X) with TowardPositive BeforeRounding
     binary_test_case!(0x0000, 0x0000, sub, TowardPositive, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -11323,6 +11332,7 @@ fn test_sub_toward_positive() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_sub_ties_to_away() {
     // testing F16::sub(0x0000, X) with TiesToAway BeforeRounding
     binary_test_case!(0x0000, 0x0000, sub, TiesToAway, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -12574,6 +12584,7 @@ fn test_sub_ties_to_away() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mul_ties_to_even() {
     // testing F16::mul(0x0000, X) with TiesToEven BeforeRounding
     binary_test_case!(0x0000, 0x0000, mul, TiesToEven, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -13825,6 +13836,7 @@ fn test_mul_ties_to_even() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mul_toward_zero() {
     // testing F16::mul(0x0000, X) with TowardZero BeforeRounding
     binary_test_case!(0x0000, 0x0000, mul, TowardZero, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -15076,6 +15088,7 @@ fn test_mul_toward_zero() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mul_toward_negative() {
     // testing F16::mul(0x0000, X) with TowardNegative BeforeRounding
     binary_test_case!(0x0000, 0x0000, mul, TowardNegative, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -16327,6 +16340,7 @@ fn test_mul_toward_negative() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mul_toward_positive() {
     // testing F16::mul(0x0000, X) with TowardPositive BeforeRounding
     binary_test_case!(0x0000, 0x0000, mul, TowardPositive, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -17578,6 +17592,7 @@ fn test_mul_toward_positive() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mul_ties_to_away() {
     // testing F16::mul(0x0000, X) with TiesToAway BeforeRounding
     binary_test_case!(0x0000, 0x0000, mul, TiesToAway, BeforeRounding, 0x0000, StatusFlags::empty());
@@ -18829,6 +18844,7 @@ fn test_mul_ties_to_away() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_div_ties_to_even() {
     // testing F16::div(0x0000, X) with TiesToEven BeforeRounding
     binary_test_case!(0x0000, 0x0000, div, TiesToEven, BeforeRounding, 0x7E00, INVALID_OPERATION);
@@ -20080,6 +20096,7 @@ fn test_div_ties_to_even() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_div_toward_zero() {
     // testing F16::div(0x0000, X) with TowardZero BeforeRounding
     binary_test_case!(0x0000, 0x0000, div, TowardZero, BeforeRounding, 0x7E00, INVALID_OPERATION);
@@ -21331,6 +21348,7 @@ fn test_div_toward_zero() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_div_toward_negative() {
     // testing F16::div(0x0000, X) with TowardNegative BeforeRounding
     binary_test_case!(0x0000, 0x0000, div, TowardNegative, BeforeRounding, 0x7E00, INVALID_OPERATION);
@@ -22582,6 +22600,7 @@ fn test_div_toward_negative() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_div_toward_positive() {
     // testing F16::div(0x0000, X) with TowardPositive BeforeRounding
     binary_test_case!(0x0000, 0x0000, div, TowardPositive, BeforeRounding, 0x7E00, INVALID_OPERATION);
@@ -23833,6 +23852,7 @@ fn test_div_toward_positive() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_div_ties_to_away() {
     // testing F16::div(0x0000, X) with TiesToAway BeforeRounding
     binary_test_case!(0x0000, 0x0000, div, TiesToAway, BeforeRounding, 0x7E00, INVALID_OPERATION);
