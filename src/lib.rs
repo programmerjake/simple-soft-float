@@ -29,13 +29,6 @@ use std::ops::ShlAssign;
 use std::ops::Shr;
 use std::ops::ShrAssign;
 
-// FIXME: re-add test cases
-// #[cfg(test)]
-// mod binary_op_test_cases;
-// #[cfg(test)]
-// mod from_real_algebraic_number_test_cases;
-// #[cfg(test)]
-// mod mul_add_test_cases;
 #[cfg(test)]
 mod test_cases;
 
