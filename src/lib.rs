@@ -319,6 +319,7 @@ impl NaNPropagationMode {
         second_class: FloatClass,
         third_class: FloatClass,
     ) -> NaNPropagationResults {
+        #![allow(clippy::cognitive_complexity)]
         use NaNPropagationMode::*;
         use NaNPropagationResults::*;
         match self {
@@ -2074,24 +2075,21 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                     Self::quiet_nan_with_traits(self.traits.clone())
                 }
             }
-        } else if is_infinity_times_zero {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
-            return Self::quiet_nan_with_traits(self.traits.clone());
-        } else if (self_class.is_infinity() || factor_class.is_infinity())
-            && term_class.is_infinity()
-            && product_sign != term.sign()
+        } else if is_infinity_times_zero
+            || ((self_class.is_infinity() || factor_class.is_infinity())
+                && term_class.is_infinity()
+                && product_sign != term.sign())
         {
             fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
-            return Self::quiet_nan_with_traits(self.traits.clone());
-        } else if (self_class.is_zero() || factor_class.is_zero())
+            Self::quiet_nan_with_traits(self.traits.clone())
+        } else if ((self_class.is_zero() || factor_class.is_zero())
             && term_class.is_zero()
-            && product_sign == term.sign()
+            && product_sign == term.sign())
+            || term_class.is_infinity()
         {
-            return term.clone();
-        } else if term_class.is_infinity() {
-            return term.clone();
+            term.clone()
         } else if self_class.is_infinity() || factor_class.is_infinity() {
-            return Self::signed_infinity_with_traits(product_sign, self.traits.clone());
+            Self::signed_infinity_with_traits(product_sign, self.traits.clone())
         } else {
             let self_value = self.to_real_algebraic_number().expect("known to be finite");
             let factor_value = factor
