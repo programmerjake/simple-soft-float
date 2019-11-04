@@ -3,10 +3,7 @@
 # See Notices.txt for copyright information
 set -e
 
-if [[ -z "$SOFTFLOAT_VERIFY" ]]; then
-    SOFTFLOAT_VERIFY="`which softfloat-verify`"
-fi
-if [[ -z "$SOFTFLOAT_VERIFY" ]]; then
+if [[ -z "$SOFTFLOAT_VERIFY" ]] && ! SOFTFLOAT_VERIFY="`which softfloat-verify`"; then
     echo "can't find softfloat-verify in PATH" >&2
     echo "get it from https://salsa.debian.org/Kazan-team/softfloat-verify" >&2
     echo "then put built executable in PATH or set" >&2
@@ -75,16 +72,16 @@ function write_test_case() {
     ((flags & flag_infinite)) && decoded_flags+=("DIVISION_BY_ZERO")
     ((flags & flag_invalid)) && decoded_flags+=("INVALID_OPERATION")
     if (( ${#decoded_flags[@]} )); then
-        printf -v flags "%s | " "${decoded_flags[@]}"
-        flags="${flags%% | }"
+        printf -v flags "%s|" "${decoded_flags[@]}"
+        flags="${flags%%|}"
     else
-        flags="StatusFlags::empty()"
+        flags="(empty)"
     fi
     if (((result & 0x7C00) == 0x7C00 && (result & 0x3FF) != 0)); then
         result=0x7E00
     fi
     printf -v result "0x%04X" $((result))
-    echo "    binary_test_case!($value1, $value2, $op, $rounding_mode, $tininess_detection_mode, $result, $flags);"
+    echo "$value1 $value2 $rounding_mode $tininess_detection_mode $result $flags"
 }
 
 test_case_list=(0x0000 0x0001 0x03FF 0x0400 0x3C00 0x3C01 0x7BFF 0x7C00 0x7C01 0x7DFF 0x7E00 0x7FFF)
@@ -93,25 +90,10 @@ ops=(add sub mul div)
 rounding_modes=(TiesToEven TowardZero TowardNegative TowardPositive TiesToAway)
 tininess_detection_modes=(BeforeRounding AfterRounding)
 
-total=0
 for op in "${ops[@]}"; do
+    exec > "test_data/$op.txt"
+    first=1
     for rounding_mode in "${rounding_modes[@]}"; do
-        for tininess_detection_mode in "${tininess_detection_modes[@]}"; do
-            for value1 in "${test_case_list[@]}"; do
-                ((total += 1))
-            done
-        done
-    done
-done
-
-step=0
-for op in "${ops[@]}"; do
-    for rounding_mode in "${rounding_modes[@]}"; do
-        echo "#[test]"
-        echo "#[rustfmt::skip]"
-        lc_rounding_mode="`echo "$rounding_mode" | sed 's/\([^A-Z]\)\([A-Z]\)/\1_\2/g; s/.*/\L&/'`"
-        echo "fn test_${op}_$lc_rounding_mode() {"
-        first=1
         for tininess_detection_mode in "${tininess_detection_modes[@]}"; do
             for value1 in "${test_case_list[@]}"; do
                 if ((first)); then
@@ -119,16 +101,14 @@ for op in "${ops[@]}"; do
                 else
                     echo
                 fi
-                echo "    // testing F16::$op($value1, X) with $rounding_mode $tininess_detection_mode"
+                echo "# testing F16::$op($value1, X) with $rounding_mode $tininess_detection_mode"
                 for value2 in "${test_case_list[@]}"; do
                     write_test_case $value1 $value2 $op $rounding_mode $tininess_detection_mode
                 done
-                ((step += 1))
-                [ -t 1 ] || printf "\rworking %i%%...\x1b[K" $(((step * 100) / total)) >&2
+                printf "." >&2
             done
         done
-        echo "}"
-        echo
-    done
+    done &
 done
-[ -t 1 ] || printf "\rdone.\x1b[K\n" >&2
+wait
+echo >&2
