@@ -183,6 +183,12 @@ pub enum BinaryNaNPropagationMode {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum UnaryNaNPropagationMode {
+    AlwaysCanonical,
+    First,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum BinaryNaNPropagationResults {
     Canonical,
     First,
@@ -254,25 +260,41 @@ impl BinaryNaNPropagationMode {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum NaNPropagationResults {
+pub enum UnaryNaNPropagationResults {
     Canonical,
     First,
-    Second,
-    Third,
 }
 
-impl Default for NaNPropagationResults {
+impl Default for UnaryNaNPropagationResults {
     fn default() -> Self {
         Self::Canonical
     }
 }
 
-impl From<NaNPropagationMode> for BinaryNaNPropagationMode {
-    fn from(v: NaNPropagationMode) -> Self {
+impl UnaryNaNPropagationMode {
+    pub fn calculate_propagation_results(
+        self,
+        first_class: FloatClass,
+    ) -> UnaryNaNPropagationResults {
+        match self {
+            UnaryNaNPropagationMode::AlwaysCanonical => UnaryNaNPropagationResults::Canonical,
+            UnaryNaNPropagationMode::First => {
+                if first_class.is_nan() {
+                    UnaryNaNPropagationResults::First
+                } else {
+                    UnaryNaNPropagationResults::Canonical
+                }
+            }
+        }
+    }
+}
+
+impl From<TernaryNaNPropagationMode> for BinaryNaNPropagationMode {
+    fn from(v: TernaryNaNPropagationMode) -> Self {
         use BinaryNaNPropagationMode::*;
-        use NaNPropagationMode::*;
+        use TernaryNaNPropagationMode::*;
         match v {
-            NaNPropagationMode::AlwaysCanonical => BinaryNaNPropagationMode::AlwaysCanonical,
+            TernaryNaNPropagationMode::AlwaysCanonical => BinaryNaNPropagationMode::AlwaysCanonical,
             FirstSecondThird | FirstThirdSecond | ThirdFirstSecond => FirstSecond,
             SecondFirstThird | SecondThirdFirst | ThirdSecondFirst => SecondFirst,
             FirstSecondThirdPreferringSNaN
@@ -285,8 +307,35 @@ impl From<NaNPropagationMode> for BinaryNaNPropagationMode {
     }
 }
 
+impl From<BinaryNaNPropagationMode> for UnaryNaNPropagationMode {
+    fn from(v: BinaryNaNPropagationMode) -> Self {
+        use BinaryNaNPropagationMode::*;
+        use UnaryNaNPropagationMode::*;
+        match v {
+            BinaryNaNPropagationMode::AlwaysCanonical => UnaryNaNPropagationMode::AlwaysCanonical,
+            FirstSecond | SecondFirst | FirstSecondPreferringSNaN | SecondFirstPreferringSNaN => {
+                First
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum NaNPropagationMode {
+pub enum TernaryNaNPropagationResults {
+    Canonical,
+    First,
+    Second,
+    Third,
+}
+
+impl Default for TernaryNaNPropagationResults {
+    fn default() -> Self {
+        Self::Canonical
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum TernaryNaNPropagationMode {
     AlwaysCanonical,
     FirstSecondThird,
     FirstThirdSecond,
@@ -302,22 +351,22 @@ pub enum NaNPropagationMode {
     ThirdSecondFirstPreferringSNaN,
 }
 
-impl Default for NaNPropagationMode {
-    fn default() -> NaNPropagationMode {
-        NaNPropagationMode::AlwaysCanonical
+impl Default for TernaryNaNPropagationMode {
+    fn default() -> TernaryNaNPropagationMode {
+        TernaryNaNPropagationMode::AlwaysCanonical
     }
 }
 
-impl NaNPropagationMode {
+impl TernaryNaNPropagationMode {
     pub fn calculate_propagation_results(
         self,
         first_class: FloatClass,
         second_class: FloatClass,
         third_class: FloatClass,
-    ) -> NaNPropagationResults {
+    ) -> TernaryNaNPropagationResults {
         #![allow(clippy::cognitive_complexity)]
-        use NaNPropagationMode::*;
-        use NaNPropagationResults::*;
+        use TernaryNaNPropagationMode::*;
+        use TernaryNaNPropagationResults::*;
         match self {
             AlwaysCanonical => Canonical,
             FirstSecondThird => {
@@ -691,7 +740,8 @@ pub struct PlatformProperties {
     pub canonical_nan_mantissa_msb: bool,
     pub canonical_nan_mantissa_second_to_msb: bool,
     pub canonical_nan_mantissa_rest: bool,
-    pub nan_propagation_mode: NaNPropagationMode,
+    pub add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode,
+    pub fma_nan_propagation_mode: TernaryNaNPropagationMode,
     pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
 }
 
@@ -735,8 +785,12 @@ macro_rules! platform_properties_constants {
                             &self.canonical_nan_mantissa_rest,
                         )
                         .field(
-                            "nan_propagation_mode",
-                            &self.nan_propagation_mode,
+                            "add_sub_mul_div_nan_propagation_mode",
+                            &self.add_sub_mul_div_nan_propagation_mode,
+                        )
+                        .field(
+                            "fma_nan_propagation_mode",
+                            &self.fma_nan_propagation_mode,
                         )
                         .field(
                             "fma_inf_zero_qnan_result",
@@ -756,7 +810,9 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
-        nan_propagation_mode: NaNPropagationMode::ThirdFirstSecondPreferringSNaN,
+        // FIXME: NaN propagation not known to be correct
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
     };
     pub const RISC_V: PlatformProperties = PlatformProperties {
@@ -764,7 +820,8 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
-        nan_propagation_mode: NaNPropagationMode::AlwaysCanonical,
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::AlwaysCanonical,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::AlwaysCanonical,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
     };
     pub const POWER: PlatformProperties = PlatformProperties {
@@ -772,7 +829,9 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
-        nan_propagation_mode: NaNPropagationMode::FirstThirdSecond,
+        // FIXME: NaN propagation not known to be correct
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstThirdSecond,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
     };
     pub const MIPS_2008: PlatformProperties = PlatformProperties {
@@ -780,7 +839,9 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
-        nan_propagation_mode: NaNPropagationMode::ThirdFirstSecondPreferringSNaN,
+        // FIXME: NaN propagation not known to be correct
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
     };
     // X86_X87 is not implemented
@@ -789,7 +850,9 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
-        nan_propagation_mode: NaNPropagationMode::FirstSecondThird,
+        // FIXME: NaN propagation not known to be correct
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThird,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
     pub const SPARC: PlatformProperties = PlatformProperties {
@@ -797,7 +860,9 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: true,
-        nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        // FIXME: NaN propagation not known to be correct
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
     pub const HPPA: PlatformProperties = PlatformProperties {
@@ -805,7 +870,9 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: false,
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: false,
-        nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        // FIXME: NaN propagation not known to be correct
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
     pub const MIPS_LEGACY: PlatformProperties = PlatformProperties {
@@ -813,7 +880,9 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: false,
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: true,
-        nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        // FIXME: NaN propagation not known to be correct
+        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
     };
 }
@@ -1880,10 +1949,10 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
                     fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
                 }
-                match BinaryNaNPropagationMode::from(
-                    properties.platform_properties.nan_propagation_mode,
-                )
-                .calculate_propagation_results(self_class, rhs_class)
+                match properties
+                    .platform_properties
+                    .add_sub_mul_div_nan_propagation_mode
+                    .calculate_propagation_results(self_class, rhs_class)
                 {
                     BinaryNaNPropagationResults::First => self.to_quiet_nan(),
                     BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
@@ -1974,10 +2043,10 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
                 fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
             }
-            match BinaryNaNPropagationMode::from(
-                properties.platform_properties.nan_propagation_mode,
-            )
-            .calculate_propagation_results(self_class, rhs_class)
+            match properties
+                .platform_properties
+                .add_sub_mul_div_nan_propagation_mode
+                .calculate_propagation_results(self_class, rhs_class)
             {
                 BinaryNaNPropagationResults::First => self.to_quiet_nan(),
                 BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
@@ -2023,10 +2092,10 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
                 fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
             }
-            match BinaryNaNPropagationMode::from(
-                properties.platform_properties.nan_propagation_mode,
-            )
-            .calculate_propagation_results(self_class, rhs_class)
+            match properties
+                .platform_properties
+                .add_sub_mul_div_nan_propagation_mode
+                .calculate_propagation_results(self_class, rhs_class)
             {
                 BinaryNaNPropagationResults::First => self.to_quiet_nan(),
                 BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
@@ -2058,7 +2127,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         }
     }
     /// compute `(self * factor) + term`
-    pub fn mul_add(
+    pub fn fused_mul_add(
         &self,
         factor: &Self,
         term: &Self,
@@ -2099,13 +2168,13 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
             match properties
                 .platform_properties
-                .nan_propagation_mode
+                .fma_nan_propagation_mode
                 .calculate_propagation_results(self_class, factor_class, term_class)
             {
-                NaNPropagationResults::First => self.to_quiet_nan(),
-                NaNPropagationResults::Second => factor.to_quiet_nan(),
-                NaNPropagationResults::Third => term.to_quiet_nan(),
-                NaNPropagationResults::Canonical => {
+                TernaryNaNPropagationResults::First => self.to_quiet_nan(),
+                TernaryNaNPropagationResults::Second => factor.to_quiet_nan(),
+                TernaryNaNPropagationResults::Third => term.to_quiet_nan(),
+                TernaryNaNPropagationResults::Canonical => {
                     Self::quiet_nan_with_traits(self.traits.clone())
                 }
             }
@@ -2314,7 +2383,8 @@ mod tests {
              canonical_nan_sign: Negative, canonical_nan_mantissa_msb: false, \
              canonical_nan_mantissa_second_to_msb: true, \
              canonical_nan_mantissa_rest: true, \
-             nan_propagation_mode: FirstSecondThirdPreferringSNaN, \
+             add_sub_mul_div_nan_propagation_mode: FirstSecondPreferringSNaN, \
+             fma_nan_propagation_mode: FirstSecondThirdPreferringSNaN, \
              fma_inf_zero_qnan_result: CanonicalAndGenerateInvalid, \
              quiet_nan_format: MIPSLegacy }), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \

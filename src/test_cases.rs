@@ -504,7 +504,7 @@ fn mul_add_test_case(
         tininess_detection_mode,
         ..FPState::default()
     };
-    *result = value1.mul_add(&value2, &value3, None, Some(&mut fp_state));
+    *result = value1.fused_mul_add(&value2, &value3, None, Some(&mut fp_state));
     *status_flags = fp_state.status_flags;
 }
 
