@@ -686,7 +686,7 @@ impl Default for QuietNaNFormat {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct NaNType {
+pub struct PlatformProperties {
     pub canonical_nan_sign: Sign,
     pub canonical_nan_mantissa_msb: bool,
     pub canonical_nan_mantissa_second_to_msb: bool,
@@ -695,32 +695,32 @@ pub struct NaNType {
     pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
 }
 
-impl Default for NaNType {
-    fn default() -> NaNType {
-        NaNType::default()
+impl Default for PlatformProperties {
+    fn default() -> PlatformProperties {
+        PlatformProperties::default()
     }
 }
 
-macro_rules! nan_type_constants {
+macro_rules! platform_properties_constants {
     (
         $(
             $(#[$meta:meta])*
-            pub const $ident:ident: NaNType = $init:expr;
+            pub const $ident:ident: PlatformProperties = $init:expr;
         )+
     ) => {
-        impl NaNType {
+        impl PlatformProperties {
             $(
                 $(#[$meta])*
-                pub const $ident: NaNType = $init;
+                pub const $ident: PlatformProperties = $init;
             )+
         }
 
-        impl fmt::Debug for NaNType {
+        impl fmt::Debug for PlatformProperties {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                $(if *self == NaNType::$ident {
-                    f.write_str(concat!("NaNType::", stringify!($ident)))
+                $(if *self == PlatformProperties::$ident {
+                    f.write_str(concat!("PlatformProperties::", stringify!($ident)))
                 } else)+ {
-                    f.debug_struct("NaNType")
+                    f.debug_struct("PlatformProperties")
                         .field("canonical_nan_sign", &self.canonical_nan_sign)
                         .field(
                             "canonical_nan_mantissa_msb",
@@ -750,8 +750,8 @@ macro_rules! nan_type_constants {
     };
 }
 
-nan_type_constants! {
-    pub const ARM: NaNType = NaNType {
+platform_properties_constants! {
+    pub const ARM: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
@@ -759,7 +759,7 @@ nan_type_constants! {
         nan_propagation_mode: NaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
     };
-    pub const RISC_V: NaNType = NaNType {
+    pub const RISC_V: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
@@ -767,7 +767,7 @@ nan_type_constants! {
         nan_propagation_mode: NaNPropagationMode::AlwaysCanonical,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
     };
-    pub const POWER: NaNType = NaNType {
+    pub const POWER: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
@@ -775,7 +775,7 @@ nan_type_constants! {
         nan_propagation_mode: NaNPropagationMode::FirstThirdSecond,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
     };
-    pub const MIPS_2008: NaNType = NaNType {
+    pub const MIPS_2008: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
@@ -784,7 +784,7 @@ nan_type_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
     };
     // X86_X87 is not implemented
-    pub const X86_SSE: NaNType = NaNType {
+    pub const X86_SSE: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Negative,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
@@ -792,7 +792,7 @@ nan_type_constants! {
         nan_propagation_mode: NaNPropagationMode::FirstSecondThird,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
-    pub const SPARC: NaNType = NaNType {
+    pub const SPARC: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: true,
@@ -800,7 +800,7 @@ nan_type_constants! {
         nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
-    pub const HPPA: NaNType = NaNType {
+    pub const HPPA: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: false,
         canonical_nan_mantissa_second_to_msb: true,
@@ -808,7 +808,7 @@ nan_type_constants! {
         nan_propagation_mode: NaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
     };
-    pub const MIPS_LEGACY: NaNType = NaNType {
+    pub const MIPS_LEGACY: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
         canonical_nan_mantissa_msb: false,
         canonical_nan_mantissa_second_to_msb: true,
@@ -818,7 +818,7 @@ nan_type_constants! {
     };
 }
 
-impl NaNType {
+impl PlatformProperties {
     pub const fn default() -> Self {
         Self::RISC_V
     }
@@ -837,7 +837,7 @@ pub struct FloatProperties {
     mantissa_width: usize,
     has_implicit_leading_bit: bool,
     has_sign_bit: bool,
-    nan_type: NaNType,
+    platform_properties: PlatformProperties,
 }
 
 impl FloatProperties {
@@ -847,14 +847,14 @@ impl FloatProperties {
         mantissa_width: usize,
         has_implicit_leading_bit: bool,
         has_sign_bit: bool,
-        nan_type: NaNType,
+        platform_properties: PlatformProperties,
     ) -> Self {
         Self {
             exponent_width,
             mantissa_width,
             has_implicit_leading_bit,
             has_sign_bit,
-            nan_type,
+            platform_properties,
         }
     }
     #[inline]
@@ -864,62 +864,93 @@ impl FloatProperties {
             mantissa_width,
             has_implicit_leading_bit: true,
             has_sign_bit: true,
-            nan_type: NaNType::default(),
+            platform_properties: PlatformProperties::default(),
         }
     }
     #[inline]
-    pub const fn new_with_nan_type(
+    pub const fn new_with_platform_properties(
         exponent_width: usize,
         mantissa_width: usize,
-        nan_type: NaNType,
+        platform_properties: PlatformProperties,
     ) -> Self {
         Self {
             exponent_width,
             mantissa_width,
             has_implicit_leading_bit: true,
             has_sign_bit: true,
-            nan_type,
+            platform_properties,
         }
     }
     /// `FloatProperties` for standard [__binary16__ format](https://en.wikipedia.org/wiki/Half-precision_floating-point_format)
-    pub const STANDARD_16: Self = Self::standard_16_with_nan_type(NaNType::default());
+    pub const STANDARD_16: Self =
+        Self::standard_16_with_platform_properties(PlatformProperties::default());
     /// `FloatProperties` for standard [__binary32__ format](https://en.wikipedia.org/wiki/Single-precision_floating-point_format)
-    pub const STANDARD_32: Self = Self::standard_32_with_nan_type(NaNType::default());
+    pub const STANDARD_32: Self =
+        Self::standard_32_with_platform_properties(PlatformProperties::default());
     /// `FloatProperties` for standard [__binary64__ format](https://en.wikipedia.org/wiki/Double-precision_floating-point_format)
-    pub const STANDARD_64: Self = Self::standard_64_with_nan_type(NaNType::default());
+    pub const STANDARD_64: Self =
+        Self::standard_64_with_platform_properties(PlatformProperties::default());
     /// `FloatProperties` for standard [__binary128__ format](https://en.wikipedia.org/wiki/Quadruple-precision_floating-point_format)
-    pub const STANDARD_128: Self = Self::standard_128_with_nan_type(NaNType::default());
+    pub const STANDARD_128: Self =
+        Self::standard_128_with_platform_properties(PlatformProperties::default());
     /// `FloatProperties` for standard [__binary16__ format](https://en.wikipedia.org/wiki/Half-precision_floating-point_format)
-    pub const fn standard_16_with_nan_type(nan_type: NaNType) -> Self {
-        Self::new_with_nan_type(5, 10, nan_type)
+    pub const fn standard_16_with_platform_properties(
+        platform_properties: PlatformProperties,
+    ) -> Self {
+        Self::new_with_platform_properties(5, 10, platform_properties)
     }
     /// `FloatProperties` for standard [__binary32__ format](https://en.wikipedia.org/wiki/Single-precision_floating-point_format)
-    pub const fn standard_32_with_nan_type(nan_type: NaNType) -> Self {
-        Self::new_with_nan_type(8, 23, nan_type)
+    pub const fn standard_32_with_platform_properties(
+        platform_properties: PlatformProperties,
+    ) -> Self {
+        Self::new_with_platform_properties(8, 23, platform_properties)
     }
     /// `FloatProperties` for standard [__binary64__ format](https://en.wikipedia.org/wiki/Double-precision_floating-point_format)
-    pub const fn standard_64_with_nan_type(nan_type: NaNType) -> Self {
-        Self::new_with_nan_type(11, 52, nan_type)
+    pub const fn standard_64_with_platform_properties(
+        platform_properties: PlatformProperties,
+    ) -> Self {
+        Self::new_with_platform_properties(11, 52, platform_properties)
     }
     /// `FloatProperties` for standard [__binary128__ format](https://en.wikipedia.org/wiki/Quadruple-precision_floating-point_format)
-    pub const fn standard_128_with_nan_type(nan_type: NaNType) -> Self {
-        Self::new_with_nan_type(15, 112, nan_type)
+    pub const fn standard_128_with_platform_properties(
+        platform_properties: PlatformProperties,
+    ) -> Self {
+        Self::new_with_platform_properties(15, 112, platform_properties)
     }
     /// construct `FloatProperties` for standard `width`-bit binary interchange format, if it exists
     #[inline]
-    pub fn standard_with_nan_type(width: usize, nan_type: NaNType) -> Option<Self> {
+    pub fn standard_with_platform_properties(
+        width: usize,
+        platform_properties: PlatformProperties,
+    ) -> Option<Self> {
         match width {
-            16 => Some(Self::new_with_nan_type(5, 10, nan_type)),
-            32 => Some(Self::new_with_nan_type(8, 23, nan_type)),
-            64 => Some(Self::new_with_nan_type(11, 52, nan_type)),
-            128 => Some(Self::new_with_nan_type(15, 112, nan_type)),
+            16 => Some(Self::new_with_platform_properties(
+                5,
+                10,
+                platform_properties,
+            )),
+            32 => Some(Self::new_with_platform_properties(
+                8,
+                23,
+                platform_properties,
+            )),
+            64 => Some(Self::new_with_platform_properties(
+                11,
+                52,
+                platform_properties,
+            )),
+            128 => Some(Self::new_with_platform_properties(
+                15,
+                112,
+                platform_properties,
+            )),
             _ => {
                 if width > 128 && width.is_multiple_of(&32) {
                     let exponent_width = ((width as f64).log2() * 4.0).round() as usize - 13;
-                    Some(Self::new_with_nan_type(
+                    Some(Self::new_with_platform_properties(
                         exponent_width,
                         width - exponent_width - 1,
-                        nan_type,
+                        platform_properties,
                     ))
                 } else {
                     None
@@ -929,11 +960,12 @@ impl FloatProperties {
     }
     #[inline]
     pub fn standard(width: usize) -> Option<Self> {
-        Self::standard_with_nan_type(width, NaNType::default())
+        Self::standard_with_platform_properties(width, PlatformProperties::default())
     }
     #[inline]
     pub fn is_standard(self) -> bool {
-        Self::standard_with_nan_type(self.width(), self.nan_type()) == Some(self)
+        Self::standard_with_platform_properties(self.width(), self.platform_properties())
+            == Some(self)
     }
     /// the number of bits in the exponent field
     #[inline]
@@ -955,12 +987,12 @@ impl FloatProperties {
         self.has_sign_bit
     }
     #[inline]
-    pub const fn nan_type(self) -> NaNType {
-        self.nan_type
+    pub const fn platform_properties(self) -> PlatformProperties {
+        self.platform_properties
     }
     #[inline]
     pub fn quiet_nan_format(self) -> QuietNaNFormat {
-        self.nan_type.quiet_nan_format()
+        self.platform_properties.quiet_nan_format()
     }
     #[inline]
     pub const fn width(self) -> usize {
@@ -1031,7 +1063,7 @@ impl fmt::Debug for FloatProperties {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let is_standard = self.is_standard();
         if !f.alternate() && is_standard {
-            if self.nan_type() == NaNType::default() {
+            if self.platform_properties() == PlatformProperties::default() {
                 match self.width() {
                     16 => f.write_str("FloatProperties::STANDARD_16"),
                     32 => f.write_str("FloatProperties::STANDARD_32"),
@@ -1043,29 +1075,29 @@ impl fmt::Debug for FloatProperties {
                 match self.width() {
                     16 => write!(
                         f,
-                        "FloatProperties::standard_16_with_nan_type({:?})",
-                        self.nan_type()
+                        "FloatProperties::standard_16_with_platform_properties({:?})",
+                        self.platform_properties()
                     ),
                     32 => write!(
                         f,
-                        "FloatProperties::standard_32_with_nan_type({:?})",
-                        self.nan_type()
+                        "FloatProperties::standard_32_with_platform_properties({:?})",
+                        self.platform_properties()
                     ),
                     64 => write!(
                         f,
-                        "FloatProperties::standard_64_with_nan_type({:?})",
-                        self.nan_type()
+                        "FloatProperties::standard_64_with_platform_properties({:?})",
+                        self.platform_properties()
                     ),
                     128 => write!(
                         f,
-                        "FloatProperties::standard_128_with_nan_type({:?})",
-                        self.nan_type()
+                        "FloatProperties::standard_128_with_platform_properties({:?})",
+                        self.platform_properties()
                     ),
                     width => write!(
                         f,
-                        "FloatProperties::standard_with_nan_type({}, {:?})",
+                        "FloatProperties::standard_with_platform_properties({}, {:?})",
                         width,
-                        self.nan_type()
+                        self.platform_properties()
                     ),
                 }
             }
@@ -1075,7 +1107,7 @@ impl fmt::Debug for FloatProperties {
                 .field("mantissa_width", &self.mantissa_width())
                 .field("has_implicit_leading_bit", &self.has_implicit_leading_bit())
                 .field("has_sign_bit", &self.has_sign_bit())
-                .field("nan_type", &self.nan_type())
+                .field("platform_properties", &self.platform_properties())
                 .field("quiet_nan_format", &self.quiet_nan_format())
                 .field("width", &self.width())
                 .field("fraction_width", &self.fraction_width())
@@ -1094,25 +1126,25 @@ pub trait FloatTraits: Clone + fmt::Debug + PartialEq {
 pub struct F16Traits;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub struct F16WithNaNTypeTraits(pub NaNType);
+pub struct F16WithPlatformPropertiesTraits(pub PlatformProperties);
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F32Traits;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub struct F32WithNaNTypeTraits(pub NaNType);
+pub struct F32WithPlatformPropertiesTraits(pub PlatformProperties);
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F64Traits;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub struct F64WithNaNTypeTraits(pub NaNType);
+pub struct F64WithPlatformPropertiesTraits(pub PlatformProperties);
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F128Traits;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub struct F128WithNaNTypeTraits(pub NaNType);
+pub struct F128WithPlatformPropertiesTraits(pub PlatformProperties);
 
 impl FloatTraits for FloatProperties {
     type Bits = BigUint;
@@ -1128,10 +1160,10 @@ impl FloatTraits for F16Traits {
     }
 }
 
-impl FloatTraits for F16WithNaNTypeTraits {
+impl FloatTraits for F16WithPlatformPropertiesTraits {
     type Bits = u16;
     fn properties(&self) -> FloatProperties {
-        FloatProperties::standard_16_with_nan_type(self.0)
+        FloatProperties::standard_16_with_platform_properties(self.0)
     }
 }
 
@@ -1142,10 +1174,10 @@ impl FloatTraits for F32Traits {
     }
 }
 
-impl FloatTraits for F32WithNaNTypeTraits {
+impl FloatTraits for F32WithPlatformPropertiesTraits {
     type Bits = u32;
     fn properties(&self) -> FloatProperties {
-        FloatProperties::standard_32_with_nan_type(self.0)
+        FloatProperties::standard_32_with_platform_properties(self.0)
     }
 }
 
@@ -1156,10 +1188,10 @@ impl FloatTraits for F64Traits {
     }
 }
 
-impl FloatTraits for F64WithNaNTypeTraits {
+impl FloatTraits for F64WithPlatformPropertiesTraits {
     type Bits = u64;
     fn properties(&self) -> FloatProperties {
-        FloatProperties::standard_64_with_nan_type(self.0)
+        FloatProperties::standard_64_with_platform_properties(self.0)
     }
 }
 
@@ -1170,10 +1202,10 @@ impl FloatTraits for F128Traits {
     }
 }
 
-impl FloatTraits for F128WithNaNTypeTraits {
+impl FloatTraits for F128WithPlatformPropertiesTraits {
     type Bits = u128;
     fn properties(&self) -> FloatProperties {
-        FloatProperties::standard_128_with_nan_type(self.0)
+        FloatProperties::standard_128_with_platform_properties(self.0)
     }
 }
 
@@ -1848,8 +1880,10 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
                     fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
                 }
-                match BinaryNaNPropagationMode::from(properties.nan_type.nan_propagation_mode)
-                    .calculate_propagation_results(self_class, rhs_class)
+                match BinaryNaNPropagationMode::from(
+                    properties.platform_properties.nan_propagation_mode,
+                )
+                .calculate_propagation_results(self_class, rhs_class)
                 {
                     BinaryNaNPropagationResults::First => self.to_quiet_nan(),
                     BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
@@ -1940,8 +1974,10 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
                 fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
             }
-            match BinaryNaNPropagationMode::from(properties.nan_type.nan_propagation_mode)
-                .calculate_propagation_results(self_class, rhs_class)
+            match BinaryNaNPropagationMode::from(
+                properties.platform_properties.nan_propagation_mode,
+            )
+            .calculate_propagation_results(self_class, rhs_class)
             {
                 BinaryNaNPropagationResults::First => self.to_quiet_nan(),
                 BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
@@ -1987,8 +2023,10 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
                 fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
             }
-            match BinaryNaNPropagationMode::from(properties.nan_type.nan_propagation_mode)
-                .calculate_propagation_results(self_class, rhs_class)
+            match BinaryNaNPropagationMode::from(
+                properties.platform_properties.nan_propagation_mode,
+            )
+            .calculate_propagation_results(self_class, rhs_class)
             {
                 BinaryNaNPropagationResults::First => self.to_quiet_nan(),
                 BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
@@ -2047,7 +2085,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
             }
             if is_infinity_times_zero && term_class.is_quiet_nan() {
-                match properties.nan_type.fma_inf_zero_qnan_result {
+                match properties.platform_properties.fma_inf_zero_qnan_result {
                     FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid => {
                         fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
                         return Self::quiet_nan_with_traits(self.traits.clone());
@@ -2060,7 +2098,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 }
             }
             match properties
-                .nan_type
+                .platform_properties
                 .nan_propagation_mode
                 .calculate_propagation_results(self_class, factor_class, term_class)
             {
@@ -2159,10 +2197,10 @@ pub type F32 = Float<F32Traits>;
 pub type F64 = Float<F64Traits>;
 pub type F128 = Float<F128Traits>;
 
-pub type F16WithNaNType = Float<F16WithNaNTypeTraits>;
-pub type F32WithNaNType = Float<F32WithNaNTypeTraits>;
-pub type F64WithNaNType = Float<F64WithNaNTypeTraits>;
-pub type F128WithNaNType = Float<F128WithNaNTypeTraits>;
+pub type F16WithPlatformProperties = Float<F16WithPlatformPropertiesTraits>;
+pub type F32WithPlatformProperties = Float<F32WithPlatformPropertiesTraits>;
+pub type F64WithPlatformProperties = Float<F64WithPlatformPropertiesTraits>;
+pub type F128WithPlatformProperties = Float<F128WithPlatformPropertiesTraits>;
 
 #[cfg(test)]
 mod tests {
@@ -2204,66 +2242,75 @@ mod tests {
         assert_eq!(
             &format!(
                 "{:?}",
-                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::RISC_V))
-            ),
-            "Float { traits: F16WithNaNTypeTraits(NaNType::RISC_V), \
-             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
-             mantissa_field: 0x234, class: PositiveNormal }",
-        );
-        assert_eq!(
-            &format!(
-                "{:?}",
-                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::SPARC))
-            ),
-            "Float { traits: F16WithNaNTypeTraits(NaNType::SPARC), \
-             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
-             mantissa_field: 0x234, class: PositiveNormal }",
-        );
-        assert_eq!(
-            &format!(
-                "{:?}",
-                F16WithNaNType::from_bits_and_traits(
+                F16WithPlatformProperties::from_bits_and_traits(
                     0x1234,
-                    F16WithNaNTypeTraits(NaNType::X86_SSE)
+                    F16WithPlatformPropertiesTraits(PlatformProperties::RISC_V)
                 )
             ),
-            "Float { traits: F16WithNaNTypeTraits(NaNType::X86_SSE), \
+            "Float { traits: F16WithPlatformPropertiesTraits(PlatformProperties::RISC_V), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \
              mantissa_field: 0x234, class: PositiveNormal }",
         );
         assert_eq!(
             &format!(
                 "{:?}",
-                F16WithNaNType::from_bits_and_traits(0x1234, F16WithNaNTypeTraits(NaNType::HPPA))
-            ),
-            "Float { traits: F16WithNaNTypeTraits(NaNType::HPPA), \
-             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
-             mantissa_field: 0x234, class: PositiveNormal }",
-        );
-        assert_eq!(
-            &format!(
-                "{:?}",
-                F16WithNaNType::from_bits_and_traits(
+                F16WithPlatformProperties::from_bits_and_traits(
                     0x1234,
-                    F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)
+                    F16WithPlatformPropertiesTraits(PlatformProperties::SPARC)
                 )
             ),
-            "Float { traits: F16WithNaNTypeTraits(NaNType::MIPS_LEGACY), \
+            "Float { traits: F16WithPlatformPropertiesTraits(PlatformProperties::SPARC), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \
              mantissa_field: 0x234, class: PositiveNormal }",
         );
         assert_eq!(
             &format!(
                 "{:?}",
-                F16WithNaNType::from_bits_and_traits(
+                F16WithPlatformProperties::from_bits_and_traits(
                     0x1234,
-                    F16WithNaNTypeTraits(NaNType {
+                    F16WithPlatformPropertiesTraits(PlatformProperties::X86_SSE)
+                )
+            ),
+            "Float { traits: F16WithPlatformPropertiesTraits(PlatformProperties::X86_SSE), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithPlatformProperties::from_bits_and_traits(
+                    0x1234,
+                    F16WithPlatformPropertiesTraits(PlatformProperties::HPPA)
+                )
+            ),
+            "Float { traits: F16WithPlatformPropertiesTraits(PlatformProperties::HPPA), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithPlatformProperties::from_bits_and_traits(
+                    0x1234,
+                    F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+                )
+            ),
+            "Float { traits: F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY), \
+             bits: 0x1234, sign: Positive, exponent_field: 0x04, \
+             mantissa_field: 0x234, class: PositiveNormal }",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                F16WithPlatformProperties::from_bits_and_traits(
+                    0x1234,
+                    F16WithPlatformPropertiesTraits(PlatformProperties {
                         canonical_nan_sign: Sign::Negative,
-                        ..NaNType::MIPS_LEGACY
+                        ..PlatformProperties::MIPS_LEGACY
                     })
                 )
             ),
-            "Float { traits: F16WithNaNTypeTraits(NaNType { \
+            "Float { traits: F16WithPlatformPropertiesTraits(PlatformProperties { \
              canonical_nan_sign: Negative, canonical_nan_mantissa_msb: false, \
              canonical_nan_mantissa_second_to_msb: true, \
              canonical_nan_mantissa_rest: true, \
@@ -2301,35 +2348,67 @@ mod tests {
         assert_eq!(F16::from_bits(0xFE00).class(), QuietNaN);
         assert_eq!(F16::from_bits(0xFFFF).class(), QuietNaN);
         assert_eq!(
-            Float::from_bits_and_traits(0x7C01, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0x7C01,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             QuietNaN
         );
         assert_eq!(
-            Float::from_bits_and_traits(0x7DFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0x7DFF,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             QuietNaN
         );
         assert_eq!(
-            Float::from_bits_and_traits(0x7E00, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0x7E00,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             SignalingNaN
         );
         assert_eq!(
-            Float::from_bits_and_traits(0x7FFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0x7FFF,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             SignalingNaN
         );
         assert_eq!(
-            Float::from_bits_and_traits(0xFC01, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0xFC01,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             QuietNaN
         );
         assert_eq!(
-            Float::from_bits_and_traits(0xFDFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0xFDFF,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             QuietNaN
         );
         assert_eq!(
-            Float::from_bits_and_traits(0xFE00, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0xFE00,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             SignalingNaN
         );
         assert_eq!(
-            Float::from_bits_and_traits(0xFFFF, F16WithNaNTypeTraits(NaNType::MIPS_LEGACY)).class(),
+            Float::from_bits_and_traits(
+                0xFFFF,
+                F16WithPlatformPropertiesTraits(PlatformProperties::MIPS_LEGACY)
+            )
+            .class(),
             SignalingNaN
         );
     }
