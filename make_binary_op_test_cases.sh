@@ -48,7 +48,11 @@ function write_test_case() {
     local input="softfloat_round_$sf_rounding_mode softfloat_roundingMode_write_helper"
     input+=" 0 softfloat_exceptionFlags_write_helper"
     input+=" softfloat_tininess_${tininess_detection_mode,} softfloat_detectTininess_write_helper"
-    input+=" $value1 $value2 f16_$op"
+    if [[ "$op" == "ieee754_remainder" ]]; then
+        input+=" $value1 $value2 f16_rem"
+    else
+        input+=" $value1 $value2 f16_$op"
+    fi
     input+=" softfloat_exceptionFlags_read_helper"
     input+=" softfloat_flag_inexact"
     input+=" softfloat_flag_underflow"
@@ -86,7 +90,7 @@ function write_test_case() {
 
 test_case_list=(0x0000 0x0001 0x03FF 0x0400 0x3C00 0x3C01 0x7BFF 0x7C00 0x7C01 0x7DFF 0x7E00 0x7FFF)
 test_case_list+=(0x8000 0x8001 0x83FF 0x8400 0xBC00 0xBC01 0xFBFF 0xFC00 0xFC01 0xFDFF 0xFE00 0xFFFF)
-ops=(add sub mul div)
+ops=(add sub mul div ieee754_remainder)
 rounding_modes=(TiesToEven TowardZero TowardNegative TowardPositive TiesToAway)
 tininess_detection_modes=(BeforeRounding AfterRounding)
 

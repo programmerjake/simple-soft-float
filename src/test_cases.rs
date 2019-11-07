@@ -488,6 +488,27 @@ test_case! {
     }
 }
 
+test_case! {
+    #[test_case_file_name = "ieee754_remainder.txt"]
+    fn test_ieee754_remainder(lhs: F16,
+                rhs: F16,
+                rounding_mode: RoundingMode,
+                tininess_detection_mode: TininessDetectionMode,
+                #[output] result: F16,
+                #[output] status_flags: StatusFlags,
+    ) {
+        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let mut fp_state = FPState {
+            rounding_mode,
+            exception_handling_mode,
+            tininess_detection_mode,
+            ..FPState::default()
+        };
+        *result = lhs.ieee754_remainder(&rhs, None, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
+    }
+}
+
 fn mul_add_test_case(
     value1: F16,
     value2: F16,

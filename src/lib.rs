@@ -741,7 +741,7 @@ pub struct PlatformProperties {
     pub canonical_nan_mantissa_msb: bool,
     pub canonical_nan_mantissa_second_to_msb: bool,
     pub canonical_nan_mantissa_rest: bool,
-    pub add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode,
+    pub std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode,
     pub fma_nan_propagation_mode: TernaryNaNPropagationMode,
     pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
     pub round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode,
@@ -795,7 +795,7 @@ macro_rules! platform_properties_constants {
                         canonical_nan_mantissa_msb,
                         canonical_nan_mantissa_second_to_msb,
                         canonical_nan_mantissa_rest,
-                        add_sub_mul_div_nan_propagation_mode,
+                        std_bin_ops_nan_propagation_mode,
                         fma_nan_propagation_mode,
                         fma_inf_zero_qnan_result,
                         round_to_integral_nan_propagation_mode,
@@ -815,7 +815,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
         // FIXME: NaN propagation not known to be correct
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
@@ -826,7 +826,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_msb: true,
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::AlwaysCanonical,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::AlwaysCanonical,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::AlwaysCanonical,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
@@ -838,7 +838,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
         // FIXME: NaN propagation not known to be correct
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstThirdSecond,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
@@ -850,7 +850,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
         // FIXME: NaN propagation not known to be correct
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
@@ -863,7 +863,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_second_to_msb: false,
         canonical_nan_mantissa_rest: false,
         // FIXME: NaN propagation not known to be correct
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThird,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
@@ -875,7 +875,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: true,
         // FIXME: NaN propagation not known to be correct
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
@@ -887,7 +887,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: false,
         // FIXME: NaN propagation not known to be correct
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
@@ -899,7 +899,7 @@ platform_properties_constants! {
         canonical_nan_mantissa_second_to_msb: true,
         canonical_nan_mantissa_rest: true,
         // FIXME: NaN propagation not known to be correct
-        add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
@@ -2026,7 +2026,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 }
                 match properties
                     .platform_properties
-                    .add_sub_mul_div_nan_propagation_mode
+                    .std_bin_ops_nan_propagation_mode
                     .calculate_propagation_results(self_class, rhs_class)
                 {
                     BinaryNaNPropagationResults::First => self.to_quiet_nan(),
@@ -2120,7 +2120,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
             match properties
                 .platform_properties
-                .add_sub_mul_div_nan_propagation_mode
+                .std_bin_ops_nan_propagation_mode
                 .calculate_propagation_results(self_class, rhs_class)
             {
                 BinaryNaNPropagationResults::First => self.to_quiet_nan(),
@@ -2169,7 +2169,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
             match properties
                 .platform_properties
-                .add_sub_mul_div_nan_propagation_mode
+                .std_bin_ops_nan_propagation_mode
                 .calculate_propagation_results(self_class, rhs_class)
             {
                 BinaryNaNPropagationResults::First => self.to_quiet_nan(),
@@ -2199,6 +2199,78 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 Some(fp_state),
                 self.traits.clone(),
             )
+        }
+    }
+    pub fn ieee754_remainder(
+        &self,
+        rhs: &Self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        assert_eq!(self.traits, rhs.traits);
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let self_class = self.class();
+        let rhs_class = rhs.class();
+        if self_class.is_nan() || rhs_class.is_nan() {
+            if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            }
+            match properties
+                .platform_properties
+                .std_bin_ops_nan_propagation_mode
+                .calculate_propagation_results(self_class, rhs_class)
+            {
+                BinaryNaNPropagationResults::First => self.to_quiet_nan(),
+                BinaryNaNPropagationResults::Second => rhs.to_quiet_nan(),
+                BinaryNaNPropagationResults::Canonical => {
+                    Self::quiet_nan_with_traits(self.traits.clone())
+                }
+            }
+        } else if self_class.is_infinity() || rhs_class.is_zero() {
+            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            Self::quiet_nan_with_traits(self.traits.clone())
+        } else if rhs_class.is_infinity() {
+            if self_class.is_zero() {
+                self.clone()
+            } else {
+                Self::from_real_algebraic_number_with_traits(
+                    &self.to_real_algebraic_number().expect("known to be finite"),
+                    Some(rounding_mode),
+                    Some(fp_state),
+                    self.traits.clone(),
+                )
+            }
+        } else {
+            let lhs_value = self.to_real_algebraic_number().expect("known to be finite");
+            let rhs_value = rhs.to_real_algebraic_number().expect("known to be finite");
+            let quotient = &lhs_value / &rhs_value;
+            let floor_quotient = quotient.to_integer_floor();
+            let fract_quotient = quotient - RealAlgebraicNumber::from(floor_quotient.clone());
+            let selected_quotient = match fract_quotient.cmp(&Ratio::new(1, 2).into()) {
+                Ordering::Less => floor_quotient,
+                Ordering::Greater => floor_quotient + 1,
+                Ordering::Equal => {
+                    if floor_quotient.is_even() {
+                        floor_quotient
+                    } else {
+                        floor_quotient + 1
+                    }
+                }
+            };
+            let remainder = lhs_value - rhs_value * RealAlgebraicNumber::from(selected_quotient);
+            if remainder.is_zero() {
+                Self::signed_zero_with_traits(self.sign(), self.traits.clone())
+            } else {
+                Self::from_real_algebraic_number_with_traits(
+                    &remainder,
+                    Some(rounding_mode),
+                    Some(fp_state),
+                    self.traits.clone(),
+                )
+            }
         }
     }
     /// compute `(self * factor) + term`
@@ -2671,7 +2743,7 @@ mod tests {
              canonical_nan_sign: Negative, canonical_nan_mantissa_msb: false, \
              canonical_nan_mantissa_second_to_msb: true, \
              canonical_nan_mantissa_rest: true, \
-             add_sub_mul_div_nan_propagation_mode: FirstSecondPreferringSNaN, \
+             std_bin_ops_nan_propagation_mode: FirstSecondPreferringSNaN, \
              fma_nan_propagation_mode: FirstSecondThirdPreferringSNaN, \
              fma_inf_zero_qnan_result: CanonicalAndGenerateInvalid, \
              round_to_integral_nan_propagation_mode: First, \
