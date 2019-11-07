@@ -96,6 +96,7 @@ pub trait FloatBitsType:
     + FromPrimitive
     + ToPrimitive
     + Into<BigInt>
+    + From<u8>
 {
     fn from_bigint(v: &BigInt) -> Option<Self>;
 }
@@ -744,12 +745,28 @@ pub struct PlatformProperties {
     pub fma_nan_propagation_mode: TernaryNaNPropagationMode,
     pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
     pub round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode,
+    pub next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode,
 }
 
 impl Default for PlatformProperties {
     fn default() -> PlatformProperties {
         PlatformProperties::default()
     }
+}
+
+macro_rules! platform_properties_debug_full {
+    (#[self] $self:expr, #[fmt] $f:expr, $($field:ident,)+ $(#[fn] $fn:ident,)+) => {
+        {
+            let Self {
+                $($field,)+
+            } = $self;
+            $(let $fn = $self.$fn();)+
+            $f.debug_struct("PlatformProperties")
+            $(.field(stringify!($field), $field))+
+            $(.field(stringify!($fn), &$fn))+
+            .finish()
+        }
+    };
 }
 
 macro_rules! platform_properties_constants {
@@ -771,34 +788,20 @@ macro_rules! platform_properties_constants {
                 $(if *self == PlatformProperties::$ident {
                     f.write_str(concat!("PlatformProperties::", stringify!($ident)))
                 } else)+ {
-                    f.debug_struct("PlatformProperties")
-                        .field("canonical_nan_sign", &self.canonical_nan_sign)
-                        .field(
-                            "canonical_nan_mantissa_msb",
-                            &self.canonical_nan_mantissa_msb,
-                        )
-                        .field(
-                            "canonical_nan_mantissa_second_to_msb",
-                            &self.canonical_nan_mantissa_second_to_msb,
-                        )
-                        .field(
-                            "canonical_nan_mantissa_rest",
-                            &self.canonical_nan_mantissa_rest,
-                        )
-                        .field(
-                            "add_sub_mul_div_nan_propagation_mode",
-                            &self.add_sub_mul_div_nan_propagation_mode,
-                        )
-                        .field(
-                            "fma_nan_propagation_mode",
-                            &self.fma_nan_propagation_mode,
-                        )
-                        .field(
-                            "fma_inf_zero_qnan_result",
-                            &self.fma_inf_zero_qnan_result,
-                        )
-                        .field("quiet_nan_format", &self.quiet_nan_format())
-                        .finish()
+                    platform_properties_debug_full!(
+                        #[self] self,
+                        #[fmt] f,
+                        canonical_nan_sign,
+                        canonical_nan_mantissa_msb,
+                        canonical_nan_mantissa_second_to_msb,
+                        canonical_nan_mantissa_rest,
+                        add_sub_mul_div_nan_propagation_mode,
+                        fma_nan_propagation_mode,
+                        fma_inf_zero_qnan_result,
+                        round_to_integral_nan_propagation_mode,
+                        next_up_or_down_nan_propagation_mode,
+                        #[fn] quiet_nan_format,
+                    )
                 }
             }
         }
@@ -816,6 +819,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const RISC_V: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -826,6 +830,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::AlwaysCanonical,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
     };
     pub const POWER: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -837,6 +842,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstThirdSecond,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_2008: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -848,6 +854,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     // X86_X87 is not implemented
     pub const X86_SSE: PlatformProperties = PlatformProperties {
@@ -860,6 +867,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThird,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const SPARC: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -871,6 +879,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const HPPA: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -882,6 +891,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_LEGACY: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -893,6 +903,7 @@ platform_properties_constants! {
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
 }
 
@@ -1103,6 +1114,13 @@ impl FloatProperties {
     }
     pub fn mantissa_field_max<Bits: FloatBitsType>(self) -> Bits {
         (Bits::one() << self.mantissa_width) - Bits::one()
+    }
+    pub fn mantissa_field_normal_min<Bits: FloatBitsType>(self) -> Bits {
+        if self.has_implicit_leading_bit {
+            Bits::zero()
+        } else {
+            Bits::one() << self.fraction_width()
+        }
     }
     #[inline]
     pub const fn mantissa_field_msb_shift(self) -> usize {
@@ -1392,6 +1410,27 @@ impl RoundedMantissa {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum UpOrDown {
+    Up,
+    Down,
+}
+
+impl Default for UpOrDown {
+    fn default() -> Self {
+        Self::Up
+    }
+}
+
+impl From<UpOrDown> for Sign {
+    fn from(up_or_down: UpOrDown) -> Sign {
+        match up_or_down {
+            UpOrDown::Up => Sign::Positive,
+            UpOrDown::Down => Sign::Negative,
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct Float<FT: FloatTraits> {
     traits: FT,
@@ -1528,8 +1567,8 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn class(&self) -> FloatClass {
         let properties = self.properties();
         let sign = self.sign();
-        let exponent_field = self.exponent_field();
-        let mantissa_field = self.mantissa_field();
+        let mut exponent_field = self.exponent_field();
+        let mut mantissa_field = self.mantissa_field();
         let retval = if exponent_field == properties.exponent_zero_subnormal() {
             if mantissa_field.is_zero() {
                 FloatClass::PositiveZero
@@ -1547,8 +1586,22 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             } else {
                 FloatClass::SignalingNaN
             }
-        } else {
+        } else if properties.has_implicit_leading_bit() {
             FloatClass::PositiveNormal
+        } else if mantissa_field.is_zero() {
+            FloatClass::PositiveZero
+        } else {
+            loop {
+                if (properties.mantissa_field_msb_mask::<Bits>() & &mantissa_field).is_zero() {
+                    mantissa_field <<= 1;
+                    exponent_field -= Bits::one();
+                    if exponent_field == properties.exponent_zero_subnormal() {
+                        break FloatClass::PositiveSubnormal;
+                    }
+                } else {
+                    break FloatClass::PositiveNormal;
+                }
+            }
         };
         match sign {
             Sign::Positive => retval,
@@ -1795,6 +1848,19 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         FT: Default,
     {
         Self::signed_max_normal_with_traits(sign, FT::default())
+    }
+    pub fn signed_min_subnormal_with_traits(sign: Sign, traits: FT) -> Self {
+        let properties = traits.properties();
+        let mut retval = Self::signed_zero_with_traits(sign, traits);
+        retval.set_mantissa_field(Bits::one());
+        retval.set_exponent_field(properties.exponent_zero_subnormal());
+        retval
+    }
+    pub fn signed_min_subnormal(sign: Sign) -> Self
+    where
+        FT: Default,
+    {
+        Self::signed_min_subnormal_with_traits(sign, FT::default())
     }
     pub fn from_real_algebraic_number_with_traits(
         value: &RealAlgebraicNumber,
@@ -2337,6 +2403,113 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
+    pub fn normalize(&mut self) {
+        let properties = self.properties();
+        if properties.has_implicit_leading_bit() {
+            return;
+        }
+        let mut exponent_field = self.exponent_field();
+        let exponent_zero_subnormal = properties.exponent_zero_subnormal();
+        if exponent_field == properties.exponent_inf_nan()
+            || exponent_field == exponent_zero_subnormal
+        {
+            return;
+        }
+        let mut mantissa_field = self.mantissa_field();
+        if mantissa_field.is_zero() {
+            self.set_exponent_field(exponent_zero_subnormal);
+            return;
+        }
+        let mantissa_field_msb = Bits::one() << properties.fraction_width();
+        while (mantissa_field.clone() & &mantissa_field_msb).is_zero() {
+            if exponent_field == exponent_zero_subnormal {
+                break;
+            }
+            exponent_field -= Bits::one();
+            mantissa_field <<= 1;
+        }
+        self.set_exponent_field(exponent_field);
+        self.set_mantissa_field(mantissa_field);
+    }
+    pub fn next_up_or_down(&self, up_or_down: UpOrDown, fp_state: Option<&mut FPState>) -> Self {
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        match (self.class(), up_or_down) {
+            (class, _) if class.is_nan() => {
+                if class.is_signaling_nan() {
+                    fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                }
+                match properties
+                    .platform_properties()
+                    .next_up_or_down_nan_propagation_mode
+                    .calculate_propagation_results(class)
+                {
+                    UnaryNaNPropagationResults::Canonical => {
+                        Self::quiet_nan_with_traits(self.traits.clone())
+                    }
+                    UnaryNaNPropagationResults::First => self.to_quiet_nan(),
+                }
+            }
+            (FloatClass::NegativeInfinity, UpOrDown::Up)
+            | (FloatClass::PositiveInfinity, UpOrDown::Down) => {
+                Self::signed_max_normal_with_traits(self.sign(), self.traits.clone())
+            }
+            (FloatClass::NegativeInfinity, UpOrDown::Down)
+            | (FloatClass::PositiveInfinity, UpOrDown::Up) => self.clone(),
+            (class, _) if class.is_zero() => {
+                Self::signed_min_subnormal_with_traits(up_or_down.into(), self.traits.clone())
+            }
+            _ => {
+                let mut retval = self.clone();
+                retval.normalize();
+                let mantissa = self.mantissa_field();
+                let is_larger_magnitude = Sign::from(up_or_down) == self.sign();
+                if is_larger_magnitude {
+                    if mantissa == properties.mantissa_field_max() {
+                        let exponent = self.exponent_field();
+                        if exponent == properties.exponent_max_normal() {
+                            Self::signed_infinity_with_traits(self.sign(), self.traits.clone())
+                        } else {
+                            let mut retval = self.clone();
+                            retval.set_mantissa_field(properties.mantissa_field_normal_min());
+                            retval.set_exponent_field(exponent + Bits::one());
+                            retval
+                        }
+                    } else {
+                        let mut retval = self.clone();
+                        retval.set_mantissa_field(mantissa + Bits::one());
+                        retval
+                    }
+                } else {
+                    if mantissa <= properties.mantissa_field_normal_min() {
+                        let exponent = self.exponent_field();
+                        if exponent == properties.exponent_zero_subnormal() {
+                            assert!(!mantissa.is_zero());
+                            let mut retval = self.clone();
+                            retval.set_mantissa_field(mantissa - Bits::one());
+                            retval
+                        } else {
+                            let mut retval = self.clone();
+                            retval.set_mantissa_field(properties.mantissa_field_max());
+                            retval.set_exponent_field(exponent - Bits::one());
+                            retval
+                        }
+                    } else {
+                        let mut retval = self.clone();
+                        retval.set_mantissa_field(mantissa - Bits::one());
+                        retval
+                    }
+                }
+            }
+        }
+    }
+    pub fn next_up(&self, fp_state: Option<&mut FPState>) -> Self {
+        self.next_up_or_down(UpOrDown::Up, fp_state)
+    }
+    pub fn next_down(&self, fp_state: Option<&mut FPState>) -> Self {
+        self.next_up_or_down(UpOrDown::Down, fp_state)
+    }
 }
 
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT> {
@@ -2501,6 +2674,8 @@ mod tests {
              add_sub_mul_div_nan_propagation_mode: FirstSecondPreferringSNaN, \
              fma_nan_propagation_mode: FirstSecondThirdPreferringSNaN, \
              fma_inf_zero_qnan_result: CanonicalAndGenerateInvalid, \
+             round_to_integral_nan_propagation_mode: First, \
+             next_up_or_down_nan_propagation_mode: First, \
              quiet_nan_format: MIPSLegacy }), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \
              mantissa_field: 0x234, class: PositiveNormal }",

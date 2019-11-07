@@ -657,3 +657,21 @@ test_case! {
         *status_flags = fp_state.status_flags;
     }
 }
+
+test_case! {
+    #[test_case_file_name = "next_up_or_down.txt"]
+    fn test_next_up_or_down(
+        value: F16,
+        #[output] up_result: F16,
+        #[output] up_status_flags: StatusFlags,
+        #[output] down_result: F16,
+        #[output] down_status_flags: StatusFlags,
+    ) {
+        let mut fp_state = FPState::default();
+        *up_result = value.next_up(Some(&mut fp_state));
+        *up_status_flags = fp_state.status_flags;
+        let mut fp_state = FPState::default();
+        *down_result = value.next_down(Some(&mut fp_state));
+        *down_status_flags = fp_state.status_flags;
+    }
+}
