@@ -725,3 +725,23 @@ test_case! {
         *status_flags = fp_state.status_flags;
     }
 }
+
+test_case! {
+    #[test_case_file_name = "sqrt.txt"]
+    fn test_sqrt(value: F16,
+                 rounding_mode: RoundingMode,
+                 tininess_detection_mode: TininessDetectionMode,
+                 #[output] result: F16,
+                 #[output] status_flags: StatusFlags,
+    ) {
+        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let mut fp_state = FPState {
+            rounding_mode,
+            exception_handling_mode,
+            tininess_detection_mode,
+            ..FPState::default()
+        };
+        *result = value.sqrt(None, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
+    }
+}
