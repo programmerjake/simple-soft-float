@@ -23,7 +23,7 @@ fn test_case_argument_same<T: TestCaseArgument + Sized, SameFn: FnOnce(&T, &T) -
 }
 
 macro_rules! impl_test_case_argument_for_int {
-    ($t:ident) => {
+    ($t:ident, $unsigned_t:ident) => {
         impl TestCaseArgument for $t {
             fn parse_into(&mut self, text: &str) -> Result<(), String> {
                 let mut bytes = text.bytes();
@@ -83,8 +83,16 @@ macro_rules! impl_test_case_argument_for_int {
             fn same(&self, other: &dyn TestCaseArgument) -> bool {
                 test_case_argument_same(self, other, PartialEq::eq)
             }
+            #[allow(unused_comparisons)]
             fn debug(&self) -> String {
-                format!("{:#X}", self)
+                if *self < 0 {
+                    format!(
+                        "-{:#X}",
+                        ($unsigned_t::max_value() - *self as $unsigned_t) + 1
+                    )
+                } else {
+                    format!("{:#X}", self)
+                }
             }
             fn as_any(&self) -> &dyn Any {
                 self
@@ -93,16 +101,16 @@ macro_rules! impl_test_case_argument_for_int {
     };
 }
 
-impl_test_case_argument_for_int!(u8);
-impl_test_case_argument_for_int!(u16);
-impl_test_case_argument_for_int!(u32);
-impl_test_case_argument_for_int!(u64);
-impl_test_case_argument_for_int!(u128);
-impl_test_case_argument_for_int!(i8);
-impl_test_case_argument_for_int!(i16);
-impl_test_case_argument_for_int!(i32);
-impl_test_case_argument_for_int!(i64);
-impl_test_case_argument_for_int!(i128);
+impl_test_case_argument_for_int!(u8, u8);
+impl_test_case_argument_for_int!(u16, u16);
+impl_test_case_argument_for_int!(u32, u32);
+impl_test_case_argument_for_int!(u64, u64);
+impl_test_case_argument_for_int!(u128, u128);
+impl_test_case_argument_for_int!(i8, u8);
+impl_test_case_argument_for_int!(i16, u16);
+impl_test_case_argument_for_int!(i32, u32);
+impl_test_case_argument_for_int!(i64, u64);
+impl_test_case_argument_for_int!(i128, u128);
 
 impl TestCaseArgument for F16 {
     fn parse_into(&mut self, text: &str) -> Result<(), String> {
@@ -232,7 +240,7 @@ trait TestCase {
     fn io(&mut self) -> TestCaseIO<'_>;
     fn calculate(&mut self, location: FileLocation);
     fn parse_and_run(&mut self, test_case: &str, location: FileLocation) {
-        let mut arguments_text = test_case.split(' ');
+        let mut arguments_text = test_case.split(' ').filter(|v| !v.is_empty());
         let io = self.io();
         for argument in io.inputs {
             if let Some(argument_text) = arguments_text.next() {
@@ -694,5 +702,26 @@ test_case! {
         let mut fp_state = FPState::default();
         *down_result = value.next_down(Some(&mut fp_state));
         *down_status_flags = fp_state.status_flags;
+    }
+}
+
+test_case! {
+    #[test_case_file_name = "scale_b.txt"]
+    fn test_scale_b(value: F16,
+                    scale: i64,
+                    rounding_mode: RoundingMode,
+                    tininess_detection_mode: TininessDetectionMode,
+                    #[output] result: F16,
+                    #[output] status_flags: StatusFlags,
+    ) {
+        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let mut fp_state = FPState {
+            rounding_mode,
+            exception_handling_mode,
+            tininess_detection_mode,
+            ..FPState::default()
+        };
+        *result = value.scale_b(scale.into(), None, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
     }
 }

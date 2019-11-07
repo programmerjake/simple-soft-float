@@ -746,6 +746,7 @@ pub struct PlatformProperties {
     pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
     pub round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode,
     pub next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode,
+    pub scale_b_nan_propagation_mode: UnaryNaNPropagationMode,
 }
 
 impl Default for PlatformProperties {
@@ -800,6 +801,7 @@ macro_rules! platform_properties_constants {
                         fma_inf_zero_qnan_result,
                         round_to_integral_nan_propagation_mode,
                         next_up_or_down_nan_propagation_mode,
+                        scale_b_nan_propagation_mode,
                         #[fn] quiet_nan_format,
                     )
                 }
@@ -820,6 +822,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const RISC_V: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -831,6 +834,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
     };
     pub const POWER: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -843,6 +847,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_2008: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -855,6 +860,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     // X86_X87 is not implemented
     pub const X86_SSE: PlatformProperties = PlatformProperties {
@@ -868,6 +874,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const SPARC: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -880,6 +887,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const HPPA: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -892,6 +900,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_LEGACY: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -904,6 +913,7 @@ platform_properties_constants! {
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
         next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
+        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
 }
 
@@ -1827,6 +1837,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn into_quiet_nan(mut self) -> Self {
         let properties = self.properties();
         self.set_exponent_field(properties.exponent_inf_nan::<Bits>());
+        // FIXME: handle nan propagation properly
         match properties.quiet_nan_format() {
             QuietNaNFormat::Standard => self.set_mantissa_field_msb(true),
             QuietNaNFormat::MIPSLegacy => return Self::quiet_nan_with_traits(self.traits),
@@ -2234,7 +2245,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             Self::quiet_nan_with_traits(self.traits.clone())
         } else if rhs_class.is_infinity() {
             if self_class.is_zero() {
-                self.clone()
+                Self::signed_zero_with_traits(self.sign(), self.traits.clone())
             } else {
                 Self::from_real_algebraic_number_with_traits(
                     &self.to_real_algebraic_number().expect("known to be finite"),
@@ -2332,12 +2343,13 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         {
             fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
             Self::quiet_nan_with_traits(self.traits.clone())
-        } else if ((self_class.is_zero() || factor_class.is_zero())
+        } else if (self_class.is_zero() || factor_class.is_zero())
             && term_class.is_zero()
-            && product_sign == term.sign())
-            || term_class.is_infinity()
+            && product_sign == term.sign()
         {
-            term.clone()
+            Self::signed_zero_with_traits(product_sign, self.traits.clone())
+        } else if term_class.is_infinity() {
+            Self::signed_infinity_with_traits(term.sign(), self.traits.clone())
         } else if self_class.is_infinity() || factor_class.is_infinity() {
             Self::signed_infinity_with_traits(product_sign, self.traits.clone())
         } else {
@@ -2458,7 +2470,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 UnaryNaNPropagationResults::First => self.to_quiet_nan(),
             }
         } else if class.is_infinity() {
-            self.clone()
+            Self::signed_infinity_with_traits(self.sign(), self.traits.clone())
         } else {
             let value = self
                 .round_to_bigint(exact, Some(rounding_mode), Some(fp_state))
@@ -2608,6 +2620,60 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             exponent -= 1;
         }
         Some(exponent)
+    }
+    pub fn scale_b(
+        &self,
+        mut scale: BigInt,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let properties = self.properties();
+        let class = self.class();
+        if class.is_nan() {
+            if class.is_signaling_nan() {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            }
+            match properties
+                .platform_properties()
+                .scale_b_nan_propagation_mode
+                .calculate_propagation_results(class)
+            {
+                UnaryNaNPropagationResults::Canonical => {
+                    Self::quiet_nan_with_traits(self.traits.clone())
+                }
+                UnaryNaNPropagationResults::First => self.to_quiet_nan(),
+            }
+        } else if class.is_infinity() {
+            Self::signed_infinity_with_traits(self.sign(), self.traits.clone())
+        } else if class.is_zero() {
+            Self::signed_zero_with_traits(self.sign(), self.traits.clone())
+        } else {
+            let exponent_max_normal: BigInt = properties.exponent_max_normal::<Bits>().into();
+            let exponent_min_normal: BigInt = properties.exponent_min_normal::<Bits>().into();
+            let scale_limit: BigInt =
+                (exponent_max_normal - exponent_min_normal + properties.fraction_width() + 1) * 2;
+            scale = scale.max(-&scale_limit);
+            scale = scale.min(scale_limit);
+            let mut value = self.to_real_algebraic_number().expect("known to be finite");
+            if scale.is_positive() {
+                value *= RealAlgebraicNumber::from(
+                    BigInt::one() << scale.to_usize().expect("rhs won't fit in usize"),
+                );
+            } else {
+                value /= RealAlgebraicNumber::from(
+                    BigInt::one() << (-scale).to_usize().expect("-rhs won't fit in usize"),
+                );
+            }
+            Self::from_real_algebraic_number_with_traits(
+                &value,
+                Some(rounding_mode),
+                Some(fp_state),
+                self.traits.clone(),
+            )
+        }
     }
 }
 
@@ -2775,6 +2841,7 @@ mod tests {
              fma_inf_zero_qnan_result: CanonicalAndGenerateInvalid, \
              round_to_integral_nan_propagation_mode: First, \
              next_up_or_down_nan_propagation_mode: First, \
+             scale_b_nan_propagation_mode: First, \
              quiet_nan_format: MIPSLegacy }), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \
              mantissa_field: 0x234, class: PositiveNormal }",
