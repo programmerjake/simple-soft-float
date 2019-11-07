@@ -743,6 +743,7 @@ pub struct PlatformProperties {
     pub add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode,
     pub fma_nan_propagation_mode: TernaryNaNPropagationMode,
     pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
+    pub round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode,
 }
 
 impl Default for PlatformProperties {
@@ -814,6 +815,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const RISC_V: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -823,6 +825,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::AlwaysCanonical,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::AlwaysCanonical,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
     };
     pub const POWER: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -833,6 +836,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstThirdSecond,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_2008: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -843,6 +847,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     // X86_X87 is not implemented
     pub const X86_SSE: PlatformProperties = PlatformProperties {
@@ -854,6 +859,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThird,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const SPARC: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -864,6 +870,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const HPPA: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -874,6 +881,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_LEGACY: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -884,6 +892,7 @@ platform_properties_constants! {
         add_sub_mul_div_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
         fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
         fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
+        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
 }
 
@@ -2215,6 +2224,112 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             } else {
                 Self::from_real_algebraic_number_with_traits(
                     &result,
+                    Some(rounding_mode),
+                    Some(fp_state),
+                    self.traits.clone(),
+                )
+            }
+        }
+    }
+    pub fn round_to_bigint(
+        &self,
+        exact: bool,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Option<BigInt> {
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        match self.class() {
+            FloatClass::SignalingNaN => {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                return None;
+            }
+            class if !class.is_finite() => {
+                return None;
+            }
+            _ => {}
+        }
+        let value = self.to_real_algebraic_number().expect("known to be finite");
+        let lower_value = value.to_integer_floor();
+        let remainder = value - RealAlgebraicNumber::from(lower_value.clone());
+        if remainder.is_zero() {
+            return Some(lower_value);
+        }
+        if exact {
+            fp_state.status_flags |= StatusFlags::INEXACT;
+        }
+        let upper_value = &lower_value + 1;
+        match rounding_mode {
+            RoundingMode::TiesToAway | RoundingMode::TiesToEven => {
+                match remainder.cmp(&Ratio::new(1, 2).into()) {
+                    Ordering::Less => Some(lower_value),
+                    Ordering::Equal => {
+                        if rounding_mode == RoundingMode::TiesToEven {
+                            if lower_value.is_even() {
+                                Some(lower_value)
+                            } else {
+                                Some(upper_value)
+                            }
+                        } else {
+                            assert_eq!(rounding_mode, RoundingMode::TiesToAway);
+                            if lower_value.is_negative() {
+                                Some(lower_value)
+                            } else {
+                                Some(upper_value)
+                            }
+                        }
+                    }
+                    Ordering::Greater => Some(upper_value),
+                }
+            }
+            RoundingMode::TowardPositive => Some(upper_value),
+            RoundingMode::TowardNegative => Some(lower_value),
+            RoundingMode::TowardZero => {
+                if lower_value.is_negative() {
+                    Some(upper_value)
+                } else {
+                    Some(lower_value)
+                }
+            }
+        }
+    }
+    pub fn round_to_integral(
+        &self,
+        exact: bool,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let class = self.class();
+        if class.is_nan() {
+            if class.is_signaling_nan() {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            }
+            match properties
+                .platform_properties()
+                .round_to_integral_nan_propagation_mode
+                .calculate_propagation_results(class)
+            {
+                UnaryNaNPropagationResults::Canonical => {
+                    Self::quiet_nan_with_traits(self.traits.clone())
+                }
+                UnaryNaNPropagationResults::First => self.to_quiet_nan(),
+            }
+        } else if class.is_infinity() {
+            self.clone()
+        } else {
+            let value = self
+                .round_to_bigint(exact, Some(rounding_mode), Some(fp_state))
+                .expect("known to be finite");
+            if value.is_zero() {
+                Self::signed_zero_with_traits(self.sign(), self.traits.clone())
+            } else {
+                Self::from_real_algebraic_number_with_traits(
+                    &value.into(),
                     Some(rounding_mode),
                     Some(fp_state),
                     self.traits.clone(),
