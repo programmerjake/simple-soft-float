@@ -2582,6 +2582,33 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn next_down(&self, fp_state: Option<&mut FPState>) -> Self {
         self.next_up_or_down(UpOrDown::Down, fp_state)
     }
+    pub fn log_b(&self, fp_state: Option<&mut FPState>) -> Option<BigInt> {
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let properties = self.properties();
+        let class = self.class();
+        if !class.is_finite() || class.is_zero() {
+            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            return None;
+        }
+        let exponent_field: BigInt = self.exponent_field().into();
+        let exponent_bias: BigInt = properties.exponent_bias::<Bits>().into();
+        let exponent_zero_subnormal: BigInt = properties.exponent_zero_subnormal::<Bits>().into();
+        let mut exponent =
+            if properties.has_implicit_leading_bit() && exponent_field != exponent_zero_subnormal {
+                return Some(exponent_field - exponent_bias);
+            } else if exponent_field == exponent_zero_subnormal {
+                properties.exponent_min_normal::<Bits>().into() - exponent_bias
+            } else {
+                exponent_field - exponent_bias
+            };
+        let mut mantissa = self.mantissa_field();
+        while (mantissa.clone() >> properties.fraction_width()).is_zero() {
+            mantissa <<= 1;
+            exponent -= 1;
+        }
+        Some(exponent)
+    }
 }
 
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT> {
@@ -2882,6 +2909,56 @@ mod tests {
         test_case!(F16::from_bits(0x8400), r(-1, 1 << 14));
         test_case!(F16::from_bits(0xBC00), r(-1, 1));
         test_case!(F16::from_bits(0xFBFF), r(-65504, 1));
+        test_case!(F16::from_bits(0xFC00), None);
+        test_case!(F16::from_bits(0xFC01), None);
+        test_case!(F16::from_bits(0xFDFF), None);
+        test_case!(F16::from_bits(0xFE00), None);
+        test_case!(F16::from_bits(0xFFFF), None);
+    }
+
+    #[test]
+    fn test_log_b() {
+        macro_rules! test_case {
+            ($value:expr, $expected_result:expr) => {
+                let value: F16 = $value;
+                let expected_result: Option<i32> = $expected_result;
+                let expected_status_flags: StatusFlags = if expected_result.is_some() {
+                    StatusFlags::empty()
+                } else {
+                    StatusFlags::INVALID_OPERATION
+                };
+                println!("value: {:?}", value);
+                println!("expected_result: {:?}", expected_result);
+                println!("expected_status_flags: {:?}", expected_status_flags);
+                let mut fp_state = FPState::default();
+                let result = value.log_b(Some(&mut fp_state));
+                println!("result: {:?}", result.as_ref().map(ToString::to_string));
+                let expected_result: Option<BigInt> = expected_result.map(Into::into);
+                println!("status_flags: {:?}", fp_state.status_flags);
+                assert!(result == expected_result);
+                assert!(fp_state.status_flags == expected_status_flags);
+            };
+        }
+
+        test_case!(F16::from_bits(0x0000), None);
+        test_case!(F16::from_bits(0x0001), Some(-24));
+        test_case!(F16::from_bits(0x0002), Some(-23));
+        test_case!(F16::from_bits(0x03FF), Some(-15));
+        test_case!(F16::from_bits(0x0400), Some(-14));
+        test_case!(F16::from_bits(0x3C00), Some(0));
+        test_case!(F16::from_bits(0x7BFF), Some(15));
+        test_case!(F16::from_bits(0x7C00), None);
+        test_case!(F16::from_bits(0x7C01), None);
+        test_case!(F16::from_bits(0x7DFF), None);
+        test_case!(F16::from_bits(0x7E00), None);
+        test_case!(F16::from_bits(0x7FFF), None);
+        test_case!(F16::from_bits(0x8000), None);
+        test_case!(F16::from_bits(0x8001), Some(-24));
+        test_case!(F16::from_bits(0x8002), Some(-23));
+        test_case!(F16::from_bits(0x83FF), Some(-15));
+        test_case!(F16::from_bits(0x8400), Some(-14));
+        test_case!(F16::from_bits(0xBC00), Some(0));
+        test_case!(F16::from_bits(0xFBFF), Some(15));
         test_case!(F16::from_bits(0xFC00), None);
         test_case!(F16::from_bits(0xFC01), None);
         test_case!(F16::from_bits(0xFDFF), None);
