@@ -104,6 +104,35 @@ macro_rules! impl_test_case_argument_for_int {
                 Self::default()
             }
         }
+
+        impl TestCaseArgument for Option<$t> {
+            fn parse_into(&mut self, text: &str) -> Result<(), String> {
+                if text == "None" {
+                    *self = None;
+                    return Ok(());
+                }
+                let mut retval: $t = 0;
+                retval.parse_into(text)?;
+                *self = Some(retval);
+                Ok(())
+            }
+            fn same(&self, other: &dyn TestCaseArgument) -> bool {
+                test_case_argument_same(self, other, PartialEq::eq)
+            }
+            #[allow(unused_comparisons)]
+            fn debug(&self) -> String {
+                match self {
+                    Some(value) => value.debug(),
+                    None => "None".into(),
+                }
+            }
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+            fn make_assignment_target() -> Self {
+                None
+            }
+        }
     };
 }
 
@@ -117,6 +146,29 @@ impl_test_case_argument_for_int!(i16, u16);
 impl_test_case_argument_for_int!(i32, u32);
 impl_test_case_argument_for_int!(i64, u64);
 impl_test_case_argument_for_int!(i128, u128);
+
+impl TestCaseArgument for bool {
+    fn parse_into(&mut self, text: &str) -> Result<(), String> {
+        *self = match text {
+            "false" => false,
+            "true" => true,
+            _ => return Err("invalid bool".into()),
+        };
+        Ok(())
+    }
+    fn same(&self, other: &dyn TestCaseArgument) -> bool {
+        test_case_argument_same(self, other, PartialEq::eq)
+    }
+    fn debug(&self) -> String {
+        format!("{:?}", self)
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn make_assignment_target() -> Self {
+        Self::default()
+    }
+}
 
 impl TestCaseArgument for F16 {
     fn parse_into(&mut self, text: &str) -> Result<(), String> {
@@ -880,12 +932,67 @@ test_case! {
 test_case! {
     #[test_case_file_name = "compare_quiet.txt"]
     fn test_compare_quiet(value1: F16,
-                              value2: F16,
-                              #[output] result: Option<Ordering>,
-                              #[output] status_flags: StatusFlags,
+                          value2: F16,
+                          #[output] result: Option<Ordering>,
+                          #[output] status_flags: StatusFlags,
     ) {
         let mut fp_state = FPState::default();
         *result = value1.compare_quiet(&value2, Some(&mut fp_state));
         *status_flags = fp_state.status_flags;
     }
 }
+
+macro_rules! float_to_int_test_case {
+    ($test_name:ident, $test_data:expr, $src_type:ident, $dest_type:ident, $convert_fn:ident) => {
+        test_case! {
+            #[test_case_file_name = $test_data]
+            fn $test_name(value: $src_type,
+                          exact: bool,
+                          rounding_mode: RoundingMode,
+                          #[output] result: Option<$dest_type>,
+                          #[output] status_flags: StatusFlags,
+            ) {
+                let mut fp_state = FPState::default();
+                *result = value.$convert_fn(exact, Some(rounding_mode), Some(&mut fp_state));
+                *status_flags = fp_state.status_flags;
+            }
+        }
+    };
+}
+
+float_to_int_test_case!(test_f16_to_i32, "f16_to_i32.txt", F16, i32, to_i32);
+float_to_int_test_case!(test_f16_to_u32, "f16_to_u32.txt", F16, u32, to_u32);
+float_to_int_test_case!(test_f16_to_i64, "f16_to_i64.txt", F16, i64, to_i64);
+float_to_int_test_case!(test_f16_to_u64, "f16_to_u64.txt", F16, u64, to_u64);
+float_to_int_test_case!(test_f32_to_i32, "f32_to_i32.txt", F32, i32, to_i32);
+float_to_int_test_case!(test_f32_to_u32, "f32_to_u32.txt", F32, u32, to_u32);
+float_to_int_test_case!(test_f32_to_i64, "f32_to_i64.txt", F32, i64, to_i64);
+float_to_int_test_case!(test_f32_to_u64, "f32_to_u64.txt", F32, u64, to_u64);
+
+macro_rules! int_to_float_test_case {
+    ($test_name:ident, $test_data:expr, $src_type:ident, $dest_type:ident, $convert_fn:ident) => {
+        test_case! {
+            #[test_case_file_name = $test_data]
+            fn $test_name(value: $src_type,
+                          rounding_mode: RoundingMode,
+                          tininess_detection_mode: TininessDetectionMode,
+                          #[output] result: $dest_type,
+                          #[output] status_flags: StatusFlags,
+            ) {
+                let mut fp_state = FPState::default();
+                fp_state.tininess_detection_mode = tininess_detection_mode;
+                *result = $dest_type::$convert_fn(value, Some(rounding_mode), Some(&mut fp_state));
+                *status_flags = fp_state.status_flags;
+            }
+        }
+    };
+}
+
+int_to_float_test_case!(test_i32_to_f16, "i32_to_f16.txt", i32, F16, from_i32);
+int_to_float_test_case!(test_u32_to_f16, "u32_to_f16.txt", u32, F16, from_u32);
+int_to_float_test_case!(test_i64_to_f16, "i64_to_f16.txt", i64, F16, from_i64);
+int_to_float_test_case!(test_u64_to_f16, "u64_to_f16.txt", u64, F16, from_u64);
+int_to_float_test_case!(test_i32_to_f32, "i32_to_f32.txt", i32, F32, from_i32);
+int_to_float_test_case!(test_u32_to_f32, "u32_to_f32.txt", u32, F32, from_u32);
+int_to_float_test_case!(test_i64_to_f32, "i64_to_f32.txt", i64, F32, from_i64);
+int_to_float_test_case!(test_u64_to_f32, "u64_to_f32.txt", u64, F32, from_u64);

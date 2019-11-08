@@ -1486,6 +1486,56 @@ impl<FT: FloatTraits + Default> Default for Float<FT> {
     }
 }
 
+macro_rules! impl_from_int_type {
+    ($from_int_with_traits:ident, $from_int:ident, $int:ident) => {
+        pub fn $from_int_with_traits(
+            value: $int,
+            rounding_mode: Option<RoundingMode>,
+            fp_state: Option<&mut FPState>,
+            traits: FT,
+        ) -> Self {
+            Self::from_real_algebraic_number_with_traits(
+                &value.into(),
+                rounding_mode,
+                fp_state,
+                traits,
+            )
+        }
+        pub fn $from_int(
+            value: $int,
+            rounding_mode: Option<RoundingMode>,
+            fp_state: Option<&mut FPState>,
+        ) -> Self
+        where
+            FT: Default,
+        {
+            Self::$from_int_with_traits(value, rounding_mode, fp_state, FT::default())
+        }
+    };
+}
+
+macro_rules! impl_to_int_type {
+    ($name:ident, $from_bigint:ident, $int:ident) => {
+        pub fn $name(
+            &self,
+            exact: bool,
+            rounding_mode: Option<RoundingMode>,
+            fp_state: Option<&mut FPState>,
+        ) -> Option<$int> {
+            let mut default_fp_state = FPState::default();
+            let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+            let old_status_flags = fp_state.status_flags;
+            if let Some(retval) = self.round_to_integer(exact, rounding_mode, Some(fp_state)).and_then(|v| v.$from_bigint()) {
+                Some(retval)
+            } else {
+                // ignore possible INEXACT flags
+                fp_state.status_flags = old_status_flags | StatusFlags::INVALID_OPERATION;
+                None
+            }
+        }
+    };
+}
+
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     fn check_bits(bits: Bits, traits: &FT) -> Bits {
         assert!(
@@ -2414,7 +2464,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
-    pub fn round_to_bigint(
+    pub fn round_to_integer(
         &self,
         exact: bool,
         rounding_mode: Option<RoundingMode>,
@@ -2506,7 +2556,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             Self::signed_infinity_with_traits(self.sign(), self.traits.clone())
         } else {
             let value = self
-                .round_to_bigint(exact, Some(rounding_mode), Some(fp_state))
+                .round_to_integer(exact, Some(rounding_mode), Some(fp_state))
                 .expect("known to be finite");
             if value.is_zero() {
                 Self::signed_zero_with_traits(self.sign(), self.traits.clone())
@@ -2888,6 +2938,34 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     ) -> Option<Ordering> {
         self.compare(rhs, false, fp_state)
     }
+    impl_from_int_type!(from_bigint_with_traits, from_bigint, BigInt);
+    impl_from_int_type!(from_biguint_with_traits, from_biguint, BigUint);
+    impl_from_int_type!(from_u8_with_traits, from_u8, u8);
+    impl_from_int_type!(from_u16_with_traits, from_u16, u16);
+    impl_from_int_type!(from_u32_with_traits, from_u32, u32);
+    impl_from_int_type!(from_u64_with_traits, from_u64, u64);
+    impl_from_int_type!(from_u128_with_traits, from_u128, u128);
+    impl_from_int_type!(from_usize_with_traits, from_usize, usize);
+    impl_from_int_type!(from_i8_with_traits, from_i8, i8);
+    impl_from_int_type!(from_i16_with_traits, from_i16, i16);
+    impl_from_int_type!(from_i32_with_traits, from_i32, i32);
+    impl_from_int_type!(from_i64_with_traits, from_i64, i64);
+    impl_from_int_type!(from_i128_with_traits, from_i128, i128);
+    impl_from_int_type!(from_isize_with_traits, from_isize, isize);
+    impl_to_int_type!(to_bigint, into, BigInt);
+    impl_to_int_type!(to_biguint, to_biguint, BigUint);
+    impl_to_int_type!(to_u8, to_u8, u8);
+    impl_to_int_type!(to_u16, to_u16, u16);
+    impl_to_int_type!(to_u32, to_u32, u32);
+    impl_to_int_type!(to_u64, to_u64, u64);
+    impl_to_int_type!(to_u128, to_u128, u128);
+    impl_to_int_type!(to_usize, to_usize, usize);
+    impl_to_int_type!(to_i8, to_i8, i8);
+    impl_to_int_type!(to_i16, to_i16, i16);
+    impl_to_int_type!(to_i32, to_i32, i32);
+    impl_to_int_type!(to_i64, to_i64, i64);
+    impl_to_int_type!(to_i128, to_i128, i128);
+    impl_to_int_type!(to_isize, to_isize, isize);
 }
 
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT> {
