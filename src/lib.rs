@@ -756,6 +756,8 @@ pub struct PlatformProperties {
     pub sqrt_nan_propagation_mode: UnaryNaNPropagationMode,
     pub float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode,
     pub rsqrt_nan_propagation_mode: UnaryNaNPropagationMode,
+    // FIXME: switch to using #[non_exhaustive] once on stable (rustc 1.40)
+    _non_exhaustive: (),
 }
 
 impl Default for PlatformProperties {
@@ -773,7 +775,7 @@ impl PlatformProperties {
                     platform_properties_debug_full!(@fmt $f, $($var_assignments)+)
                 }
             };
-            (@fmt $f:expr, let Self { $($field:ident,)+ } = self; $(let $fake_field:ident = $fake_field_init:expr;)+) => {
+            (@fmt $f:expr, let Self { _non_exhaustive, $($field:ident,)+ } = self; $(let $fake_field:ident = $fake_field_init:expr;)+) => {
                 $f.debug_struct("PlatformProperties")
                 $(.field(stringify!($field), $field))+
                 $(.field(stringify!($fake_field), &$fake_field))+
@@ -784,6 +786,7 @@ impl PlatformProperties {
         platform_properties_debug_full! {
             let f = f;
             let Self {
+                _non_exhaustive,
                 canonical_nan_sign,
                 canonical_nan_mantissa_msb,
                 canonical_nan_mantissa_second_to_msb,
@@ -830,137 +833,133 @@ macro_rules! platform_properties_constants {
 }
 
 platform_properties_constants! {
-    pub const ARM: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Positive,
-        canonical_nan_mantissa_msb: true,
-        canonical_nan_mantissa_second_to_msb: false,
-        canonical_nan_mantissa_rest: false,
+    pub const ARM: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Positive,
+        true,
+        false,
+        false,
         // FIXME: NaN propagation not known to be correct
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-    };
-    pub const RISC_V: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Positive,
-        canonical_nan_mantissa_msb: true,
-        canonical_nan_mantissa_second_to_msb: false,
-        canonical_nan_mantissa_rest: false,
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::AlwaysCanonical,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::AlwaysCanonical,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::AlwaysCanonical,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
-    };
-    pub const POWER: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Positive,
-        canonical_nan_mantissa_msb: true,
-        canonical_nan_mantissa_second_to_msb: false,
-        canonical_nan_mantissa_rest: false,
+        UnaryNaNPropagationMode::First,
+        BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
+        FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
+        FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+    );
+    pub const RISC_V: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Positive,
+        true,
+        false,
+        false,
+        UnaryNaNPropagationMode::AlwaysCanonical,
+        BinaryNaNPropagationMode::AlwaysCanonical,
+        TernaryNaNPropagationMode::AlwaysCanonical,
+        FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
+        FloatToFloatConversionNaNPropagationMode::AlwaysCanonical,
+    );
+    pub const POWER: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Positive,
+        true,
+        false,
+        false,
         // FIXME: NaN propagation not known to be correct
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstThirdSecond,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-    };
-    pub const MIPS_2008: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Positive,
-        canonical_nan_mantissa_msb: true,
-        canonical_nan_mantissa_second_to_msb: false,
-        canonical_nan_mantissa_rest: false,
+        UnaryNaNPropagationMode::First,
+        BinaryNaNPropagationMode::FirstSecond,
+        TernaryNaNPropagationMode::FirstThirdSecond,
+        FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
+        FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+    );
+    pub const MIPS_2008: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Positive,
+        true,
+        false,
+        false,
         // FIXME: NaN propagation not known to be correct
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-    };
+        UnaryNaNPropagationMode::First,
+        BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        TernaryNaNPropagationMode::ThirdFirstSecondPreferringSNaN,
+        FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
+        FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+    );
     // X86_X87 is not implemented
-    pub const X86_SSE: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Negative,
-        canonical_nan_mantissa_msb: true,
-        canonical_nan_mantissa_second_to_msb: false,
-        canonical_nan_mantissa_rest: false,
+    pub const X86_SSE: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Negative,
+        true,
+        false,
+        false,
         // FIXME: NaN propagation not known to be correct
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecond,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThird,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-    };
-    pub const SPARC: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Positive,
-        canonical_nan_mantissa_msb: true,
-        canonical_nan_mantissa_second_to_msb: true,
-        canonical_nan_mantissa_rest: true,
+        UnaryNaNPropagationMode::First,
+        BinaryNaNPropagationMode::FirstSecond,
+        TernaryNaNPropagationMode::FirstSecondThird,
+        FMAInfZeroQNaNResult::FollowNaNPropagationMode,
+        FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+    );
+    pub const SPARC: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Positive,
+        true,
+        true,
+        true,
         // FIXME: NaN propagation not known to be correct
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-    };
-    pub const HPPA: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Positive,
-        canonical_nan_mantissa_msb: false,
-        canonical_nan_mantissa_second_to_msb: true,
-        canonical_nan_mantissa_rest: false,
+        UnaryNaNPropagationMode::First,
+        BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        FMAInfZeroQNaNResult::FollowNaNPropagationMode,
+        FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+    );
+    pub const HPPA: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Positive,
+        false,
+        true,
+        false,
         // FIXME: NaN propagation not known to be correct
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::FollowNaNPropagationMode,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-    };
-    pub const MIPS_LEGACY: PlatformProperties = PlatformProperties {
-        canonical_nan_sign: Sign::Positive,
-        canonical_nan_mantissa_msb: false,
-        canonical_nan_mantissa_second_to_msb: true,
-        canonical_nan_mantissa_rest: true,
+        UnaryNaNPropagationMode::First,
+        BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        FMAInfZeroQNaNResult::FollowNaNPropagationMode,
+        FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+    );
+    pub const MIPS_LEGACY: PlatformProperties = PlatformProperties::new_simple(
+        Sign::Positive,
+        false,
+        true,
+        true,
         // FIXME: NaN propagation not known to be correct
-        std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
-        fma_nan_propagation_mode: TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
-        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
-        round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
-        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
-    };
+        UnaryNaNPropagationMode::First,
+        BinaryNaNPropagationMode::FirstSecondPreferringSNaN,
+        TernaryNaNPropagationMode::FirstSecondThirdPreferringSNaN,
+        FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
+        FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+    );
 }
 
 impl PlatformProperties {
+    pub const fn new_simple(
+        canonical_nan_sign: Sign,
+        canonical_nan_mantissa_msb: bool,
+        canonical_nan_mantissa_second_to_msb: bool,
+        canonical_nan_mantissa_rest: bool,
+        unary_nan_propagation_mode: UnaryNaNPropagationMode,
+        binary_nan_propagation_mode: BinaryNaNPropagationMode,
+        ternary_nan_propagation_mode: TernaryNaNPropagationMode,
+        fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
+        float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode,
+    ) -> Self {
+        Self {
+            canonical_nan_sign,
+            canonical_nan_mantissa_msb,
+            canonical_nan_mantissa_second_to_msb,
+            canonical_nan_mantissa_rest,
+            std_bin_ops_nan_propagation_mode: binary_nan_propagation_mode,
+            fma_nan_propagation_mode: ternary_nan_propagation_mode,
+            fma_inf_zero_qnan_result,
+            round_to_integral_nan_propagation_mode: unary_nan_propagation_mode,
+            next_up_or_down_nan_propagation_mode: unary_nan_propagation_mode,
+            scale_b_nan_propagation_mode: unary_nan_propagation_mode,
+            sqrt_nan_propagation_mode: unary_nan_propagation_mode,
+            float_to_float_conversion_nan_propagation_mode,
+            rsqrt_nan_propagation_mode: unary_nan_propagation_mode,
+            _non_exhaustive: (),
+        }
+    }
     pub const fn default() -> Self {
         Self::RISC_V
     }
