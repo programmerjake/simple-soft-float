@@ -46,13 +46,15 @@ function write_test_case() {
     local input="softfloat_round_$sf_rounding_mode softfloat_roundingMode_write_helper"
     input+=" 0 softfloat_exceptionFlags_write_helper"
     input+=" softfloat_tininess_${tininess_detection_mode,} softfloat_detectTininess_write_helper"
-    input+=" $value1"
     if [[ "$op" == "round_to_integral" ]]; then
-        input+=" softfloat_round_$sf_rounding_mode 0 f16_roundToInt"
+        input+=" $value1 softfloat_round_$sf_rounding_mode 0 f16_roundToInt"
     elif [[ "$op" == "round_to_integral_exact" ]]; then
-        input+=" softfloat_round_$sf_rounding_mode 1 f16_roundToInt"
+        input+=" $value1 softfloat_round_$sf_rounding_mode 1 f16_roundToInt"
+    elif [[ "$op" == "rsqrt" ]]; then
+        # known to work for cases in test_case_list
+        input+=" 1 i32_to_f128 $value1 f16_to_f128 f128_sqrt f128_div f128_to_f16"
     else
-        input+=" f16_$op"
+        input+=" $value1 f16_$op"
     fi
     input+=" softfloat_exceptionFlags_read_helper"
     input+=" softfloat_flag_inexact"
@@ -93,7 +95,7 @@ test_case_list=(0x0000 0x0001 0x03FF 0x0400 0x3C00 0x3C01 0x7BFF 0x7C00 0x7C01 0
 test_case_list+=(0x8000 0x8001 0x83FF 0x8400 0xBC00 0xBC01 0xFBFF 0xFC00 0xFC01 0xFDFF 0xFE00 0xFFFF)
 test_case_list+=(0x3400 0x3800 0x3A00 0x3C00 0x3D00 0x3E00 0x3F00 0x4000 0x4080 0x4100 0x4180 0x4200)
 test_case_list+=(0xB400 0xB800 0xBA00 0xBC00 0xBD00 0xBE00 0xBF00 0xC000 0xC080 0xC100 0xC180 0xC200)
-ops=(round_to_integral round_to_integral_exact sqrt)
+ops=(round_to_integral round_to_integral_exact sqrt rsqrt)
 rounding_modes=(TiesToEven TowardZero TowardNegative TowardPositive TiesToAway)
 tininess_detection_modes=(BeforeRounding AfterRounding)
 

@@ -755,6 +755,7 @@ pub struct PlatformProperties {
     pub scale_b_nan_propagation_mode: UnaryNaNPropagationMode,
     pub sqrt_nan_propagation_mode: UnaryNaNPropagationMode,
     pub float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode,
+    pub rsqrt_nan_propagation_mode: UnaryNaNPropagationMode,
 }
 
 impl Default for PlatformProperties {
@@ -795,6 +796,7 @@ impl PlatformProperties {
                 scale_b_nan_propagation_mode,
                 sqrt_nan_propagation_mode,
                 float_to_float_conversion_nan_propagation_mode,
+                rsqrt_nan_propagation_mode,
             } = self;
             let quiet_nan_format = self.quiet_nan_format();
         }
@@ -842,6 +844,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const RISC_V: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -856,6 +859,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::AlwaysCanonical,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::AlwaysCanonical,
     };
     pub const POWER: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -871,6 +875,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_2008: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -886,6 +891,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     // X86_X87 is not implemented
     pub const X86_SSE: PlatformProperties = PlatformProperties {
@@ -902,6 +908,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const SPARC: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -917,6 +924,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const HPPA: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -932,6 +940,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
     pub const MIPS_LEGACY: PlatformProperties = PlatformProperties {
         canonical_nan_sign: Sign::Positive,
@@ -947,6 +956,7 @@ platform_properties_constants! {
         scale_b_nan_propagation_mode: UnaryNaNPropagationMode::First,
         sqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
         float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
+        rsqrt_nan_propagation_mode: UnaryNaNPropagationMode::First,
     };
 }
 
@@ -2966,6 +2976,49 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     impl_to_int_type!(to_i64, to_i64, i64);
     impl_to_int_type!(to_i128, to_i128, i128);
     impl_to_int_type!(to_isize, to_isize, isize);
+    /// reciprocal square root -- computes `1 / sqrt(self)`
+    pub fn rsqrt(
+        &self,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<&mut FPState>,
+    ) -> Self {
+        let properties = self.properties();
+        let mut default_fp_state = FPState::default();
+        let fp_state = fp_state.unwrap_or(&mut default_fp_state);
+        let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
+        let class = self.class();
+        if class.is_nan() {
+            if class.is_signaling_nan() {
+                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            }
+            match properties
+                .platform_properties()
+                .rsqrt_nan_propagation_mode
+                .calculate_propagation_results(class)
+            {
+                UnaryNaNPropagationResults::Canonical => {
+                    Self::quiet_nan_with_traits(self.traits.clone())
+                }
+                UnaryNaNPropagationResults::First => self.to_quiet_nan(),
+            }
+        } else if class.is_zero() {
+            fp_state.status_flags |= StatusFlags::DIVISION_BY_ZERO;
+            Self::signed_infinity_with_traits(self.sign(), self.traits.clone())
+        } else if class.is_positive_infinity() {
+            Self::positive_zero_with_traits(self.traits.clone())
+        } else if self.sign() == Sign::Negative {
+            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            Self::quiet_nan_with_traits(self.traits.clone())
+        } else {
+            let value = self.to_real_algebraic_number().expect("known to be finite");
+            Self::from_real_algebraic_number_with_traits(
+                &value.recip().pow((1, 2)),
+                Some(rounding_mode),
+                Some(fp_state),
+                self.traits.clone(),
+            )
+        }
+    }
 }
 
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT> {
@@ -3135,6 +3188,7 @@ mod tests {
              scale_b_nan_propagation_mode: First, \
              sqrt_nan_propagation_mode: First, \
              float_to_float_conversion_nan_propagation_mode: RetainMostSignificantBits, \
+             rsqrt_nan_propagation_mode: First, \
              quiet_nan_format: MIPSLegacy }), \
              bits: 0x1234, sign: Positive, exponent_field: 0x04, \
              mantissa_field: 0x234, class: PositiveNormal }",

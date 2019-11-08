@@ -996,3 +996,23 @@ int_to_float_test_case!(test_i32_to_f32, "i32_to_f32.txt", i32, F32, from_i32);
 int_to_float_test_case!(test_u32_to_f32, "u32_to_f32.txt", u32, F32, from_u32);
 int_to_float_test_case!(test_i64_to_f32, "i64_to_f32.txt", i64, F32, from_i64);
 int_to_float_test_case!(test_u64_to_f32, "u64_to_f32.txt", u64, F32, from_u64);
+
+test_case! {
+    #[test_case_file_name = "rsqrt.txt"]
+    fn test_rsqrt(value: F16,
+                 rounding_mode: RoundingMode,
+                 tininess_detection_mode: TininessDetectionMode,
+                 #[output] result: F16,
+                 #[output] status_flags: StatusFlags,
+    ) {
+        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let mut fp_state = FPState {
+            rounding_mode,
+            exception_handling_mode,
+            tininess_detection_mode,
+            ..FPState::default()
+        };
+        *result = value.rsqrt(None, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
+    }
+}
