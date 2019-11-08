@@ -130,6 +130,24 @@ impl TestCaseArgument for F16 {
     }
 }
 
+impl TestCaseArgument for F32 {
+    fn parse_into(&mut self, text: &str) -> Result<(), String> {
+        let mut value = 0u32;
+        value.parse_into(text)?;
+        *self = F32::from_bits(value);
+        Ok(())
+    }
+    fn same(&self, other: &dyn TestCaseArgument) -> bool {
+        test_case_argument_same(self, other, |a, b| a.bits() == b.bits())
+    }
+    fn debug(&self) -> String {
+        format!("{:?}", self)
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 macro_rules! impl_test_case_argument_for_enum {
     (enum $type:ident { $($name:ident,)* }) => {
         impl TestCaseArgument for $type {
@@ -742,6 +760,46 @@ test_case! {
             ..FPState::default()
         };
         *result = value.sqrt(None, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
+    }
+}
+
+test_case! {
+    #[test_case_file_name = "f16_to_f32.txt"]
+    fn test_f16_to_f32(value: F16,
+                       rounding_mode: RoundingMode,
+                       tininess_detection_mode: TininessDetectionMode,
+                       #[output] result: F32,
+                       #[output] status_flags: StatusFlags,
+    ) {
+        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let mut fp_state = FPState {
+            rounding_mode,
+            exception_handling_mode,
+            tininess_detection_mode,
+            ..FPState::default()
+        };
+        *result = value.convert_to_float(None, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
+    }
+}
+
+test_case! {
+    #[test_case_file_name = "f32_to_f16.txt"]
+    fn test_f32_to_f16(value: F32,
+                       rounding_mode: RoundingMode,
+                       tininess_detection_mode: TininessDetectionMode,
+                       #[output] result: F16,
+                       #[output] status_flags: StatusFlags,
+    ) {
+        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let mut fp_state = FPState {
+            rounding_mode,
+            exception_handling_mode,
+            tininess_detection_mode,
+            ..FPState::default()
+        };
+        *result = value.convert_to_float(None, Some(&mut fp_state));
         *status_flags = fp_state.status_flags;
     }
 }
