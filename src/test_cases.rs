@@ -8,6 +8,9 @@ trait TestCaseArgument: Any {
     fn same(&self, other: &dyn TestCaseArgument) -> bool;
     fn as_any(&self) -> &dyn Any;
     fn debug(&self) -> String;
+    fn make_assignment_target() -> Self
+    where
+        Self: Sized;
 }
 
 fn test_case_argument_same<T: TestCaseArgument + Sized, SameFn: FnOnce(&T, &T) -> bool>(
@@ -97,6 +100,9 @@ macro_rules! impl_test_case_argument_for_int {
             fn as_any(&self) -> &dyn Any {
                 self
             }
+            fn make_assignment_target() -> Self {
+                Self::default()
+            }
         }
     };
 }
@@ -128,6 +134,9 @@ impl TestCaseArgument for F16 {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    fn make_assignment_target() -> Self {
+        Self::default()
+    }
 }
 
 impl TestCaseArgument for F32 {
@@ -146,13 +155,17 @@ impl TestCaseArgument for F32 {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    fn make_assignment_target() -> Self {
+        Self::default()
+    }
 }
 
 macro_rules! impl_test_case_argument_for_enum {
-    (enum $type:ident { $($name:ident,)* }) => {
+    (enum $type:ident { $first_name:ident, $($name:ident,)* }) => {
         impl TestCaseArgument for $type {
             fn parse_into(&mut self, text: &str) -> Result<(), String> {
                 *self = match text {
+                    stringify!($first_name) => $type::$first_name,
                     $(stringify!($name) => $type::$name,)*
                     _ => return Err(concat!("invalid ", stringify!($type)).into()),
                 };
@@ -166,6 +179,9 @@ macro_rules! impl_test_case_argument_for_enum {
             }
             fn as_any(&self) -> &dyn Any {
                 self
+            }
+            fn make_assignment_target() -> Self {
+                $type::$first_name
             }
         }
     };
@@ -192,6 +208,39 @@ impl_test_case_argument_for_enum! {
     enum TininessDetectionMode {
         BeforeRounding,
         AfterRounding,
+    }
+}
+
+impl_test_case_argument_for_enum! {
+    enum Ordering {
+        Less,
+        Equal,
+        Greater,
+    }
+}
+
+impl TestCaseArgument for Option<Ordering> {
+    fn parse_into(&mut self, text: &str) -> Result<(), String> {
+        if text == "Unordered" || text == "None" {
+            *self = None;
+            return Ok(());
+        }
+        let mut retval = Ordering::Equal;
+        retval.parse_into(text)?;
+        *self = Some(retval);
+        Ok(())
+    }
+    fn same(&self, other: &dyn TestCaseArgument) -> bool {
+        test_case_argument_same(self, other, PartialEq::eq)
+    }
+    fn debug(&self) -> String {
+        format!("{:?}", self)
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn make_assignment_target() -> Self {
+        Self::default()
     }
 }
 
@@ -224,6 +273,9 @@ impl TestCaseArgument for StatusFlags {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    fn make_assignment_target() -> Self {
+        Self::default()
+    }
 }
 
 struct TestCaseInput<'a> {
@@ -255,6 +307,9 @@ impl fmt::Display for FileLocation<'_> {
 }
 
 trait TestCase {
+    fn make() -> Self
+    where
+        Self: Sized;
     fn io(&mut self) -> TestCaseIO<'_>;
     fn calculate(&mut self, location: FileLocation);
     fn parse_and_run(&mut self, test_case: &str, location: FileLocation) {
@@ -313,12 +368,12 @@ trait TestCase {
     }
 }
 
-fn execute_test_cases<T: TestCase + Default>(test_cases: &str, file_name: &str) {
+fn execute_test_cases<T: TestCase>(test_cases: &str, file_name: &str) {
     for (i, test_case) in test_cases.lines().enumerate() {
         if test_case.starts_with('#') || test_case.is_empty() {
             continue;
         }
-        T::default().parse_and_run(
+        T::make().parse_and_run(
             test_case,
             FileLocation {
                 file_name,
@@ -353,13 +408,18 @@ macro_rules! test_case {
     ) => {
         #[test]
         fn $test_name() {
-            #[derive(Default)]
             struct TestCaseImpl {
                 $($input: $input_type,)+
                 $($output: ($output_type, $output_type),)+
             }
 
             impl TestCase for TestCaseImpl {
+                fn make() -> Self {
+                    Self {
+                        $($input: <$input_type>::make_assignment_target(),)+
+                        $($output: (<$output_type>::make_assignment_target(), <$output_type>::make_assignment_target()),)+
+                    }
+                }
                 fn io(&mut self) -> TestCaseIO {
                     let inputs = vec![
                         $(TestCaseInput {
@@ -800,6 +860,32 @@ test_case! {
             ..FPState::default()
         };
         *result = value.convert_to_float(None, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
+    }
+}
+
+test_case! {
+    #[test_case_file_name = "compare_signaling.txt"]
+    fn test_compare_signaling(value1: F16,
+                              value2: F16,
+                              #[output] result: Option<Ordering>,
+                              #[output] status_flags: StatusFlags,
+    ) {
+        let mut fp_state = FPState::default();
+        *result = value1.compare_signaling(&value2, Some(&mut fp_state));
+        *status_flags = fp_state.status_flags;
+    }
+}
+
+test_case! {
+    #[test_case_file_name = "compare_quiet.txt"]
+    fn test_compare_quiet(value1: F16,
+                              value2: F16,
+                              #[output] result: Option<Ordering>,
+                              #[output] status_flags: StatusFlags,
+    ) {
+        let mut fp_state = FPState::default();
+        *result = value1.compare_quiet(&value2, Some(&mut fp_state));
         *status_flags = fp_state.status_flags;
     }
 }

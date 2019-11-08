@@ -2823,6 +2823,71 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     ) -> Float<DestFT> {
         Float::convert_from_float(self, rounding_mode, fp_state)
     }
+    pub fn neg_assign(&mut self) {
+        self.toggle_sign();
+    }
+    pub fn neg(&self) -> Self {
+        let mut retval = self.clone();
+        retval.neg_assign();
+        retval
+    }
+    pub fn abs_assign(&mut self) {
+        self.set_sign(Sign::Positive);
+    }
+    pub fn abs(&self) -> Self {
+        let mut retval = self.clone();
+        retval.abs_assign();
+        retval
+    }
+    pub fn copy_sign_assign<FT2: FloatTraits>(&mut self, sign_src: &Float<FT2>) {
+        self.set_sign(sign_src.sign());
+    }
+    pub fn copy_sign<FT2: FloatTraits>(&self, sign_src: &Float<FT2>) -> Self {
+        let mut retval = self.clone();
+        retval.set_sign(sign_src.sign());
+        retval
+    }
+    pub fn compare(
+        &self,
+        rhs: &Self,
+        quiet: bool,
+        fp_state: Option<&mut FPState>,
+    ) -> Option<Ordering> {
+        let self_class = self.class();
+        let rhs_class = rhs.class();
+        if self_class.is_nan() || rhs_class.is_nan() {
+            if !quiet || self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
+                if let Some(fp_state) = fp_state {
+                    fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                }
+            }
+            None
+        } else if self_class.is_infinity() || rhs_class.is_infinity() {
+            if self_class == rhs_class {
+                Some(Ordering::Equal)
+            } else if self_class.is_positive_infinity() || rhs_class.is_negative_infinity() {
+                Some(Ordering::Greater)
+            } else {
+                Some(Ordering::Less)
+            }
+        } else {
+            Some(
+                self.to_ratio()
+                    .expect("known to be finite")
+                    .cmp(&rhs.to_ratio().expect("known to be finite")),
+            )
+        }
+    }
+    pub fn compare_quiet(&self, rhs: &Self, fp_state: Option<&mut FPState>) -> Option<Ordering> {
+        self.compare(rhs, true, fp_state)
+    }
+    pub fn compare_signaling(
+        &self,
+        rhs: &Self,
+        fp_state: Option<&mut FPState>,
+    ) -> Option<Ordering> {
+        self.compare(rhs, false, fp_state)
+    }
 }
 
 impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT> {
