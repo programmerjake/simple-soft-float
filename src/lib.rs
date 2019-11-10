@@ -29,6 +29,11 @@ use std::ops::ShlAssign;
 use std::ops::Shr;
 use std::ops::ShrAssign;
 
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+
+mod python;
+
 #[cfg(test)]
 mod test_cases;
 
@@ -972,6 +977,7 @@ impl PlatformProperties {
     }
 }
 
+#[cfg_attr(feature = "python", pyclass(module = "simple_soft_float"))]
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FloatProperties {
     exponent_width: usize,
@@ -3066,6 +3072,24 @@ pub type F16WithPlatformProperties = Float<F16WithPlatformPropertiesTraits>;
 pub type F32WithPlatformProperties = Float<F32WithPlatformPropertiesTraits>;
 pub type F64WithPlatformProperties = Float<F64WithPlatformPropertiesTraits>;
 pub type F128WithPlatformProperties = Float<F128WithPlatformPropertiesTraits>;
+
+#[cfg_attr(feature = "python", pyclass(module = "simple_soft_float"))]
+#[derive(Clone, Debug)]
+pub struct DynamicFloat {
+    pub fp_state: FPState,
+    pub value: Float<FloatProperties>,
+    _private: (),
+}
+
+impl DynamicFloat {
+    pub fn new(properties: FloatProperties) -> Self {
+        Self {
+            fp_state: FPState::default(),
+            value: Float::from_bits_and_traits(BigUint::zero(), properties),
+            _private: (),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

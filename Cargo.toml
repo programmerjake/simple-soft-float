@@ -9,10 +9,26 @@ license = "LGPL-2.1-or-later"
 description = "soft-float library that intends to be a straightforward reference implementation of IEEE 754"
 readme = "README.md"
 
+[lib]
+name = "simple_soft_float"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+python = ["pyo3"]
+python-extension = ["python", "pyo3/extension-module"]
+
 [dependencies]
-algebraics = ">= 0.1.2, < 0.2"
 num-bigint = "0.2"
 num-integer = "0.1"
 num-traits = "0.2"
 num-rational = "0.2"
 bitflags = "1.2"
+
+[dependencies.algebraics]
+version = ">= 0.1.2, < 0.2"
+
+[dependencies.pyo3]
+version = "0.8.2"
+optional = true
+features = ["num-bigint"]
