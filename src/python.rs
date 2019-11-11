@@ -6,73 +6,48 @@ use crate::DynamicFloat;
 use crate::FloatProperties;
 use crate::StatusFlags;
 use pyo3::basic::CompareOp;
+use pyo3::exceptions::TypeError;
 use pyo3::prelude::*;
-//use pyo3::type_object::PyTypeObject;
 use pyo3::types::PyAny;
-use pyo3::types::PyTuple;
+use pyo3::types::PyDict;
+use pyo3::types::PyType;
+use pyo3::wrap_pymodule;
 use pyo3::PyNativeType;
 use pyo3::PyObjectProtocol;
-use std::fmt;
-
-#[pyclass(name=StatusFlags, module = "simple_soft_float")]
-struct PyStatusFlags {
-    value: StatusFlags,
-}
+use std::fmt::Write as _;
 
 impl FromPyObject<'_> for StatusFlags {
     fn extract(object: &PyAny) -> PyResult<Self> {
-        Ok(object.extract::<&PyStatusFlags>()?.value)
+        if !Self::get_python_class(object.py())
+            .extract::<&PyType>(object.py())?
+            .is_instance(object)?
+        {
+            return Err(PyErr::new::<TypeError, _>(
+                "can't extract StatusFlags from value",
+            ));
+        }
+        Ok(Self::from_bits_truncate(
+            object.getattr("value")?.extract()?,
+        ))
     }
 }
 
 impl IntoPy<PyObject> for StatusFlags {
     fn into_py(self, py: Python) -> PyObject {
-        use pyo3::type_object::PyTypeObject;
-        let type_object = PyStatusFlags::type_object();
-        let type_object = type_object.as_ref(py);
-        let flags_key_name = "_StatusFlags__flags";
-        let flags_tuple_size = StatusFlags::all().bits() + 1;
-        let flags = match type_object.get_item(flags_key_name) {
-            Ok(flags) => flags.extract::<&PyTuple>().unwrap(),
-            Err(_) => {
-                let mut values = Vec::<PyObject>::new();
-                for bits in 0..flags_tuple_size {
-                    values.push(
-                        PyStatusFlags {
-                            value: StatusFlags::from_bits(bits).expect("known to fit"),
-                        }
-                        .into_py(py),
-                    );
-                }
-                let flags = PyTuple::new(py, values);
-                type_object
-                    .set_item(flags_key_name, flags)
-                    .map_err(|err| err.print(py))
-                    .unwrap();
-                flags
-            }
-        };
-        assert_eq!(flags.len(), flags_tuple_size as usize);
-        flags.as_slice()[self.bits() as usize].clone_ref(py)
+        Self::get_python_class(py)
+            .call1(py, (self.bits(),))
+            .unwrap()
     }
 }
 
-#[pymethods]
-impl PyStatusFlags {
-    #[staticmethod]
-    fn __new__(value: StatusFlags) -> StatusFlags {
-        value
-    }
-}
-
-macro_rules! pystatusflags_members {
+macro_rules! statusflags_members {
     ($($member:ident,)+) => {
         [$((stringify!($member), StatusFlags::$member),)+]
     }
 }
 
-impl PyStatusFlags {
-    const MEMBERS: &'static [(&'static str, StatusFlags)] = &pystatusflags_members![
+impl StatusFlags {
+    const MEMBERS: &'static [(&'static str, StatusFlags)] = &statusflags_members![
         INVALID_OPERATION,
         DIVISION_BY_ZERO,
         OVERFLOW,
@@ -81,65 +56,37 @@ impl PyStatusFlags {
     ];
 }
 
-#[pyproto]
-impl PyObjectProtocol for PyStatusFlags {
-    fn __repr__(&self) -> PyResult<String> {
-        struct FormatHelper(StatusFlags);
-        impl fmt::Display for FormatHelper {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                let mut first = true;
-                for &(name, value) in PyStatusFlags::MEMBERS {
-                    if self.0.contains(value) {
-                        if first {
-                            first = false;
-                        } else {
-                            f.write_str("|")?;
-                        }
-                        write!(f, "StatusFlags.{}", name)?;
-                    }
-                }
-                if first {
-                    f.write_str("StatusFlags()")?;
-                }
-                Ok(())
-            }
-        }
-        Ok(format!("{}", FormatHelper(self.value)))
-    }
-    fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
-        let inverted = match op {
-            CompareOp::Eq => false,
-            CompareOp::Ne => true,
-            CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {
-                return Ok(other.py().NotImplemented());
-            }
-        };
-        match StatusFlags::extract(other) {
-            Ok(v) => Ok(if inverted {
-                self.value != v
-            } else {
-                self.value == v
-            }
-            .into_py(other.py())),
-            Err(_) => Ok(other.py().NotImplemented()),
-        }
-    }
-}
-
 #[cfg(feature = "python")]
 #[pymodule]
 fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
-    use pyo3::type_object::PyTypeObject;
     m.add_class::<DynamicFloat>()?;
-    let type_object = PyStatusFlags::type_object();
-    let type_object = type_object.as_ref(py);
-    for &(name, value) in PyStatusFlags::MEMBERS {
-        let value: PyObject = value.into_py(py);
-        type_object.set_item(name, value)?;
+    let dict = PyDict::new(py);
+    fn make_src() -> Result<String, std::fmt::Error> {
+        let mut src = String::from("import enum\n");
+        writeln!(src, "class {}(enum.Flag):", StatusFlags::NAME)?;
+        for &(name, value) in StatusFlags::MEMBERS {
+            writeln!(src, "    {} = {}", name, value.bits())?;
+        }
+        writeln!(src, "    __module__ = \"simple_soft_float\"")?;
+        Ok(src)
     }
-    m.add_class::<PyStatusFlags>()?;
+    m.py().run(&make_src().unwrap(), None, Some(dict))?;
+    let class: PyObject = dict
+        .get_item(StatusFlags::NAME)
+        .expect("known to exist")
+        .into_py(py);
+    m.add(StatusFlags::NAME, class)?;
     m.add_class::<FloatProperties>()?;
     Ok(())
+}
+
+impl StatusFlags {
+    const NAME: &'static str = "StatusFlags";
+    fn get_python_class<'p>(py: Python<'p>) -> PyObject {
+        wrap_pymodule!(simple_soft_float)(py)
+            .getattr(py, Self::NAME)
+            .unwrap()
+    }
 }
 
 #[pymethods]
