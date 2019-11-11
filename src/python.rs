@@ -2,9 +2,18 @@
 // See Notices.txt for copyright information
 #![cfg(feature = "python")]
 
+use crate::python_macros::PythonEnum;
+use crate::BinaryNaNPropagationMode;
 use crate::DynamicFloat;
+use crate::FMAInfZeroQNaNResult;
 use crate::FloatProperties;
+use crate::FloatToFloatConversionNaNPropagationMode;
+use crate::PlatformProperties;
+use crate::RoundingMode;
+use crate::Sign;
 use crate::StatusFlags;
+use crate::TernaryNaNPropagationMode;
+use crate::UnaryNaNPropagationMode;
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::TypeError;
 use pyo3::prelude::*;
@@ -14,7 +23,22 @@ use pyo3::types::PyType;
 use pyo3::wrap_pymodule;
 use pyo3::PyNativeType;
 use pyo3::PyObjectProtocol;
+use std::borrow::Cow;
 use std::fmt::Write as _;
+
+pub(crate) trait ToPythonRepr {
+    fn to_python_repr(&self) -> Cow<str>;
+}
+
+impl ToPythonRepr for bool {
+    fn to_python_repr(&self) -> Cow<str> {
+        if *self {
+            Cow::Borrowed("True")
+        } else {
+            Cow::Borrowed("False")
+        }
+    }
+}
 
 impl FromPyObject<'_> for StatusFlags {
     fn extract(object: &PyAny) -> PyResult<Self> {
@@ -58,7 +82,7 @@ impl StatusFlags {
 
 #[cfg(feature = "python")]
 #[pymodule]
-fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
+pub(crate) fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<DynamicFloat>()?;
     let dict = PyDict::new(py);
     fn make_src() -> Result<String, std::fmt::Error> {
@@ -77,6 +101,14 @@ fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
         .into_py(py);
     m.add(StatusFlags::NAME, class)?;
     m.add_class::<FloatProperties>()?;
+    BinaryNaNPropagationMode::add_to_module(py, m)?;
+    FloatToFloatConversionNaNPropagationMode::add_to_module(py, m)?;
+    FMAInfZeroQNaNResult::add_to_module(py, m)?;
+    RoundingMode::add_to_module(py, m)?;
+    Sign::add_to_module(py, m)?;
+    TernaryNaNPropagationMode::add_to_module(py, m)?;
+    UnaryNaNPropagationMode::add_to_module(py, m)?;
+    PlatformProperties::add_to_module(py, m)?;
     Ok(())
 }
 
@@ -98,9 +130,99 @@ impl DynamicFloat {
     // FIXME: finish
 }
 
+macro_rules! impl_platform_properties_new {
+    ($($name:ident:$type:ty,)+) => {
+        #[pymethods]
+        impl PlatformProperties {
+            #[new]
+            #[args(
+                value = "None",
+                "*",
+                $($name = "None"),+
+            )]
+            fn __new__(
+                obj: &PyRawObject,
+                value: Option<&Self>,
+                $($name: Option<$type>,)+
+            ) {
+                let mut value = value.copied().unwrap_or_default();
+                $(value.$name = $name.unwrap_or(value.$name);)+
+                obj.init(value);
+            }
+        }
+
+        #[pyproto]
+        impl PyObjectProtocol for PlatformProperties {
+            fn __repr__(&self) -> PyResult<String> {
+                #![allow(unused_assignments)]
+                let mut retval = String::new();
+                write!(retval, "PlatformProperties(").unwrap();
+                let mut first = true;
+                $(
+                    if first {
+                        first = false;
+                    } else {
+                        write!(retval, ", ").unwrap();
+                    }
+                    write!(retval, concat!(stringify!($name), "={}"), self.$name.to_python_repr()).unwrap();
+                )+
+                write!(retval, ")").unwrap();
+                Ok(retval)
+            }
+            fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
+                if let Ok(rhs) = <&Self>::extract(other) {
+                    match op {
+                        CompareOp::Eq => return Ok((self == rhs).into_py(other.py())),
+                        CompareOp::Ne => return Ok((self != rhs).into_py(other.py())),
+                        CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {}
+                    };
+                }
+                Ok(other.py().NotImplemented())
+            }
+        }
+    };
+}
+
+impl_platform_properties_new!(
+    canonical_nan_sign: Sign,
+    canonical_nan_mantissa_msb: bool,
+    canonical_nan_mantissa_second_to_msb: bool,
+    canonical_nan_mantissa_rest: bool,
+    std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode,
+    fma_nan_propagation_mode: TernaryNaNPropagationMode,
+    fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
+    round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode,
+    next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode,
+    scale_b_nan_propagation_mode: UnaryNaNPropagationMode,
+    sqrt_nan_propagation_mode: UnaryNaNPropagationMode,
+    float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode,
+    rsqrt_nan_propagation_mode: UnaryNaNPropagationMode,
+);
+
+#[pymethods]
+impl PlatformProperties {
+    // FIXME: finish
+}
+
 #[pymethods]
 impl FloatProperties {
-    // FIXME: finish
+    #[new]
+    fn __new__(
+        obj: &PyRawObject,
+        exponent_width: usize,
+        mantissa_width: usize,
+        has_implicit_leading_bit: bool,
+        has_sign_bit: bool,
+        platform_properties: &PlatformProperties,
+    ) {
+        obj.init(Self::new_with_extended_flags(
+            exponent_width,
+            mantissa_width,
+            has_implicit_leading_bit,
+            has_sign_bit,
+            *platform_properties,
+        ));
+    }
 }
 
 #[pyproto]
@@ -109,17 +231,14 @@ impl PyObjectProtocol for FloatProperties {
         Ok(format!("<{:?}>", self))
     }
     fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
-        let inverted = match op {
-            CompareOp::Eq => false,
-            CompareOp::Ne => true,
-            CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {
-                return Ok(other.py().NotImplemented());
-            }
-        };
-        match <&FloatProperties>::extract(other) {
-            Ok(v) => Ok(if inverted { self != v } else { self == v }.into_py(other.py())),
-            Err(_) => Ok(other.py().NotImplemented()),
+        if let Ok(rhs) = <&FloatProperties>::extract(other) {
+            match op {
+                CompareOp::Eq => return Ok((self == rhs).into_py(other.py())),
+                CompareOp::Ne => return Ok((self != rhs).into_py(other.py())),
+                CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {}
+            };
         }
+        Ok(other.py().NotImplemented())
     }
 }
 

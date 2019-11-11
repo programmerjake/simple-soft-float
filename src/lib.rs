@@ -33,15 +33,18 @@ use std::ops::ShrAssign;
 use pyo3::prelude::*;
 
 mod python;
+#[macro_use]
+mod python_macros;
 
 #[cfg(test)]
 mod test_cases;
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-#[repr(u8)]
-pub enum Sign {
-    Positive = 0,
-    Negative = 1,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_sign_enum)]
+    pub enum Sign {
+        Positive = 0,
+        Negative = 1,
+    }
 }
 
 impl Neg for Sign {
@@ -123,14 +126,15 @@ impl_float_bits_type!(u32, to_u32);
 impl_float_bits_type!(u64, to_u64);
 impl_float_bits_type!(u128, to_u128);
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-#[repr(u32)]
-pub enum RoundingMode {
-    TiesToEven = 0,
-    TowardZero = 1,
-    TowardNegative = 2,
-    TowardPositive = 3,
-    TiesToAway = 4,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_rounding_mode_enum)]
+    pub enum RoundingMode {
+        TiesToEven = 0,
+        TowardZero = 1,
+        TowardNegative = 2,
+        TowardPositive = 3,
+        TiesToAway = 4,
+    }
 }
 
 impl Default for RoundingMode {
@@ -179,19 +183,23 @@ impl Default for TininessDetectionMode {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum BinaryNaNPropagationMode {
-    AlwaysCanonical,
-    FirstSecond,
-    SecondFirst,
-    FirstSecondPreferringSNaN,
-    SecondFirstPreferringSNaN,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_binary_nan_propagation_mode_enum)]
+    pub enum BinaryNaNPropagationMode {
+        AlwaysCanonical,
+        FirstSecond,
+        SecondFirst,
+        FirstSecondPreferringSNaN,
+        SecondFirstPreferringSNaN,
+    }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum UnaryNaNPropagationMode {
-    AlwaysCanonical,
-    First,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_unary_nan_propagation_mode_enum)]
+    pub enum UnaryNaNPropagationMode {
+        AlwaysCanonical,
+        First,
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
@@ -340,21 +348,23 @@ impl Default for TernaryNaNPropagationResults {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum TernaryNaNPropagationMode {
-    AlwaysCanonical,
-    FirstSecondThird,
-    FirstThirdSecond,
-    SecondFirstThird,
-    SecondThirdFirst,
-    ThirdFirstSecond,
-    ThirdSecondFirst,
-    FirstSecondThirdPreferringSNaN,
-    FirstThirdSecondPreferringSNaN,
-    SecondFirstThirdPreferringSNaN,
-    SecondThirdFirstPreferringSNaN,
-    ThirdFirstSecondPreferringSNaN,
-    ThirdSecondFirstPreferringSNaN,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_ternary_nan_propagation_mode_enum)]
+    pub enum TernaryNaNPropagationMode {
+        AlwaysCanonical,
+        FirstSecondThird,
+        FirstThirdSecond,
+        SecondFirstThird,
+        SecondThirdFirst,
+        ThirdFirstSecond,
+        ThirdSecondFirst,
+        FirstSecondThirdPreferringSNaN,
+        FirstThirdSecondPreferringSNaN,
+        SecondFirstThirdPreferringSNaN,
+        SecondThirdFirstPreferringSNaN,
+        ThirdFirstSecondPreferringSNaN,
+        ThirdSecondFirstPreferringSNaN,
+    }
 }
 
 impl Default for TernaryNaNPropagationMode {
@@ -547,11 +557,13 @@ impl TernaryNaNPropagationMode {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum FMAInfZeroQNaNResult {
-    FollowNaNPropagationMode,
-    CanonicalAndGenerateInvalid,
-    PropagateAndGenerateInvalid,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_fma_inf_zero_qnan_result_enum)]
+    pub enum FMAInfZeroQNaNResult {
+        FollowNaNPropagationMode,
+        CanonicalAndGenerateInvalid,
+        PropagateAndGenerateInvalid,
+    }
 }
 
 impl Default for FMAInfZeroQNaNResult {
@@ -560,10 +572,12 @@ impl Default for FMAInfZeroQNaNResult {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum FloatToFloatConversionNaNPropagationMode {
-    AlwaysCanonical,
-    RetainMostSignificantBits,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_float_to_float_conversion_nan_propagation_mode_enum)]
+    pub enum FloatToFloatConversionNaNPropagationMode {
+        AlwaysCanonical,
+        RetainMostSignificantBits,
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
@@ -746,6 +760,7 @@ impl Default for QuietNaNFormat {
     }
 }
 
+#[cfg_attr(feature = "python", pyclass(module = "simple_soft_float"))]
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PlatformProperties {
     pub canonical_nan_sign: Sign,
@@ -818,6 +833,15 @@ macro_rules! platform_properties_constants {
             pub const $ident:ident: PlatformProperties = $init:expr;
         )+
     ) => {
+        #[cfg(feature = "python")]
+        impl PlatformProperties {
+            fn add_to_module(py: Python, m: &PyModule) -> PyResult<()> {
+                m.add_class::<Self>()?;
+                $(m.add::<PyObject>(concat!("PlatformProperties_", stringify!($ident)), Self::$ident.into_py(py))?;)+
+                Ok(())
+            }
+        }
+
         impl PlatformProperties {
             $(
                 $(#[$meta])*
