@@ -205,14 +205,20 @@ macro_rules! python_enum {
         #[pyenum(module = $module:ident, repr = $repr_type:ident, test_fn = $test_fn:ident)]
         $(#[$meta:meta])*
         $vis:vis enum $enum_name:ident {
-            $($value_name:ident $(= $value_init:expr)*,)+
+            $(
+                $(#[doc $($value_doc:tt)*])*
+                $value_name:ident $(= $value_init:expr)*,
+            )+
         }
     ) => {
         $(#[$meta])*
         #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
         #[repr($repr_type)]
         $vis enum $enum_name {
-            $($value_name $(= $value_init)*,)+
+            $(
+                $(#[doc $($value_doc)*])*
+                $value_name $(= $value_init)*,
+            )+
         }
 
         python_enum_impl! {
@@ -221,6 +227,67 @@ macro_rules! python_enum {
             $vis enum $enum_name {
                 $($value_name $(= $value_init)*,)+
             }
+        }
+    };
+}
+
+#[cfg(feature = "python")]
+macro_rules! python_methods {
+    (
+        #[pymethods $($pymethods_args:tt)*]
+        impl $type:ident {
+            $(
+                $item:tt
+            )+
+        }
+    ) => {
+        #[pymethods $($pymethods_args)*]
+        impl $type {
+            $(
+                $item
+            )+
+        }
+    };
+}
+
+#[cfg(not(feature = "python"))]
+macro_rules! filter_python_method_meta {
+    ([] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
+        $(#[$good_meta])*
+        $($body)*
+    };
+    ([#[getter $($tt:tt)*] $(#[$($rest:tt)+])*] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
+        filter_python_method_meta!([$(#[$($rest)+])*] [$(#[$good_meta])*] {$($body)*});
+    };
+    ([#[new] $(#[$($rest:tt)+])*] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
+        filter_python_method_meta!([$(#[$($rest)+])*] [$(#[$good_meta])*] {$($body)*});
+    };
+    ([#[$meta:meta] $(#[$($rest:tt)+])*] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
+        filter_python_method_meta!([$(#[$($rest)+])*] [$(#[$good_meta])* #[$meta]] {$($body)*});
+    };
+}
+
+#[cfg(not(feature = "python"))]
+macro_rules! python_methods {
+    (
+        #[pymethods $($pymethods_args:tt)*]
+        impl $type:ident {
+            $(
+                $(#[$($fn_meta:tt)+])*
+                $fn_vis:vis fn $fn_name:ident($($fn_args:tt)*) $(-> $fn_ret_type:ty)* {
+                    $($fn_body:tt)*
+                }
+            )+
+        }
+    ) => {
+        impl $type {
+            $(
+                filter_python_method_meta!([$(#[$($fn_meta)+])*] [] {
+                    $fn_vis fn $fn_name($($fn_args)*) $(-> $fn_ret_type)* {
+                        $($fn_body)*
+                    }
+                });
+            )+
         }
     };
 }

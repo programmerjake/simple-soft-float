@@ -14,13 +14,20 @@ use num_traits::NumRef;
 use num_traits::ToPrimitive;
 use num_traits::Unsigned;
 use std::cmp::Ordering;
+use std::error::Error;
 use std::fmt;
+use std::ops::Add;
+use std::ops::AddAssign;
 use std::ops::BitAnd;
 use std::ops::BitAndAssign;
 use std::ops::BitOr;
 use std::ops::BitOrAssign;
 use std::ops::BitXor;
 use std::ops::BitXorAssign;
+use std::ops::Deref;
+use std::ops::DerefMut;
+use std::ops::Div;
+use std::ops::DivAssign;
 use std::ops::Mul;
 use std::ops::MulAssign;
 use std::ops::Neg;
@@ -28,6 +35,8 @@ use std::ops::Shl;
 use std::ops::ShlAssign;
 use std::ops::Shr;
 use std::ops::ShrAssign;
+use std::ops::Sub;
+use std::ops::SubAssign;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -590,18 +599,68 @@ pub struct FPState {
     _non_exhaustive: (),
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum FloatClass {
-    NegativeInfinity,
-    NegativeNormal,
-    NegativeSubnormal,
-    NegativeZero,
-    PositiveInfinity,
-    PositiveNormal,
-    PositiveSubnormal,
-    PositiveZero,
-    QuietNaN,
-    SignalingNaN,
+#[derive(Clone, Debug, Default)]
+pub struct FPStateMergeFailed;
+
+impl fmt::Display for FPStateMergeFailed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("FPState::merge failed: incompatible states")
+    }
+}
+
+impl Error for FPStateMergeFailed {}
+
+#[cfg(feature = "python")]
+impl From<FPStateMergeFailed> for PyErr {
+    fn from(value: FPStateMergeFailed) -> PyErr {
+        PyErr::new::<pyo3::exceptions::TypeError, _>(format!("{}", value))
+    }
+}
+
+impl FPState {
+    pub fn checked_merge_assign(&mut self, rhs: Self) -> Result<(), FPStateMergeFailed> {
+        let status_flags = self.status_flags | rhs.status_flags;
+        let same = Self {
+            status_flags,
+            ..*self
+        } == Self {
+            status_flags,
+            ..rhs
+        };
+        if same {
+            self.status_flags = status_flags;
+            Ok(())
+        } else {
+            Err(FPStateMergeFailed)
+        }
+    }
+    pub fn merge_assign(&mut self, rhs: Self) {
+        self.checked_merge_assign(rhs).unwrap();
+    }
+    pub fn checked_merge(mut self, rhs: Self) -> Result<Self, FPStateMergeFailed> {
+        self.checked_merge_assign(rhs)?;
+        Ok(self)
+    }
+    pub fn merge(mut self, rhs: Self) -> Self {
+        self.merge_assign(rhs);
+        self
+    }
+}
+
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_float_class_enum)]
+    pub enum FloatClass {
+        NegativeInfinity,
+        NegativeNormal,
+        NegativeSubnormal,
+        NegativeZero,
+        PositiveInfinity,
+        PositiveNormal,
+        PositiveSubnormal,
+        PositiveZero,
+        QuietNaN,
+        SignalingNaN,
+    }
 }
 
 impl FloatClass {
@@ -737,12 +796,14 @@ impl Neg for FloatClass {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum QuietNaNFormat {
-    /// MSB of mantissa set to indicate quiet NaN
-    Standard,
-    /// MSB of mantissa clear to indicate quiet NaN; also used in PA-RISC
-    MIPSLegacy,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_quiet_nan_format_enum)]
+    pub enum QuietNaNFormat {
+        /// MSB of mantissa set to indicate quiet NaN
+        Standard,
+        /// MSB of mantissa clear to indicate quiet NaN; also used in PA-RISC
+        MIPSLegacy,
+    }
 }
 
 impl QuietNaNFormat {
@@ -960,6 +1021,20 @@ platform_properties_constants! {
     );
 }
 
+python_methods! {
+    #[pymethods]
+    impl PlatformProperties {
+        #[getter]
+        pub fn quiet_nan_format(&self) -> QuietNaNFormat {
+            if self.canonical_nan_mantissa_msb {
+                QuietNaNFormat::Standard
+            } else {
+                QuietNaNFormat::MIPSLegacy
+            }
+        }
+    }
+}
+
 impl PlatformProperties {
     pub const fn new_simple(
         canonical_nan_sign: Sign,
@@ -992,16 +1067,26 @@ impl PlatformProperties {
     pub const fn default() -> Self {
         Self::RISC_V
     }
-    pub fn quiet_nan_format(self) -> QuietNaNFormat {
-        if self.canonical_nan_mantissa_msb {
-            QuietNaNFormat::Standard
-        } else {
-            QuietNaNFormat::MIPSLegacy
-        }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FloatPropertiesIncompatible;
+
+impl fmt::Display for FloatPropertiesIncompatible {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("FloatProperties values incompatible: must be equal")
     }
 }
 
-#[cfg_attr(feature = "python", pyclass(module = "simple_soft_float"))]
+impl Error for FloatPropertiesIncompatible {}
+
+#[cfg(feature = "python")]
+impl From<FloatPropertiesIncompatible> for PyErr {
+    fn from(value: FloatPropertiesIncompatible) -> PyErr {
+        PyErr::new::<pyo3::exceptions::TypeError, _>(format!("{}", value))
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FloatProperties {
     exponent_width: usize,
@@ -1012,6 +1097,14 @@ pub struct FloatProperties {
 }
 
 impl FloatProperties {
+    #[inline]
+    pub fn check_compatibility(self, other: Self) -> Result<(), FloatPropertiesIncompatible> {
+        if self == other {
+            Ok(())
+        } else {
+            Err(FloatPropertiesIncompatible)
+        }
+    }
     #[inline]
     pub const fn new_with_extended_flags(
         exponent_width: usize,
@@ -1235,6 +1328,19 @@ impl FloatProperties {
             | self.exponent_field_mask::<Bits>()
             | self.mantissa_field_mask::<Bits>()
     }
+    fn fallback_debug(&self, f: &mut fmt::Formatter, is_standard: bool) -> fmt::Result {
+        f.debug_struct("FloatProperties")
+            .field("exponent_width", &self.exponent_width())
+            .field("mantissa_width", &self.mantissa_width())
+            .field("has_implicit_leading_bit", &self.has_implicit_leading_bit())
+            .field("has_sign_bit", &self.has_sign_bit())
+            .field("platform_properties", &self.platform_properties())
+            .field("quiet_nan_format", &self.quiet_nan_format())
+            .field("width", &self.width())
+            .field("fraction_width", &self.fraction_width())
+            .field("is_standard", &is_standard)
+            .finish()
+    }
 }
 
 impl fmt::Debug for FloatProperties {
@@ -1280,17 +1386,7 @@ impl fmt::Debug for FloatProperties {
                 }
             }
         } else {
-            f.debug_struct("FloatProperties")
-                .field("exponent_width", &self.exponent_width())
-                .field("mantissa_width", &self.mantissa_width())
-                .field("has_implicit_leading_bit", &self.has_implicit_leading_bit())
-                .field("has_sign_bit", &self.has_sign_bit())
-                .field("platform_properties", &self.platform_properties())
-                .field("quiet_nan_format", &self.quiet_nan_format())
-                .field("width", &self.width())
-                .field("fraction_width", &self.fraction_width())
-                .field("is_standard", &is_standard)
-                .finish()
+            self.fallback_debug(f, is_standard)
         }
     }
 }
@@ -1492,10 +1588,12 @@ impl RoundedMantissa {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum UpOrDown {
-    Up,
-    Down,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_up_or_down_enum)]
+    pub enum UpOrDown {
+        Up,
+        Down,
+    }
 }
 
 impl Default for UpOrDown {
@@ -3097,12 +3195,138 @@ pub type F32WithPlatformProperties = Float<F32WithPlatformPropertiesTraits>;
 pub type F64WithPlatformProperties = Float<F64WithPlatformPropertiesTraits>;
 pub type F128WithPlatformProperties = Float<F128WithPlatformPropertiesTraits>;
 
-#[cfg_attr(feature = "python", pyclass(module = "simple_soft_float"))]
 #[derive(Clone, Debug)]
 pub struct DynamicFloat {
     pub fp_state: FPState,
     pub value: Float<FloatProperties>,
     _private: (),
+}
+
+impl Deref for DynamicFloat {
+    type Target = Float<FloatProperties>;
+    fn deref(&self) -> &Float<FloatProperties> {
+        &self.value
+    }
+}
+
+impl DerefMut for DynamicFloat {
+    fn deref_mut(&mut self) -> &mut Float<FloatProperties> {
+        &mut self.value
+    }
+}
+
+impl From<Float<FloatProperties>> for DynamicFloat {
+    fn from(value: Float<FloatProperties>) -> Self {
+        Self {
+            fp_state: FPState::default(),
+            value,
+            _private: (),
+        }
+    }
+}
+
+impl From<DynamicFloat> for Float<FloatProperties> {
+    fn from(value: DynamicFloat) -> Self {
+        value.value
+    }
+}
+
+macro_rules! impl_dynamic_float_fn {
+    (
+        $fn_name:ident, $called_fn_name:ident,
+        (&self$(, $args:ident: $arg_types:ty)*)
+    ) => {
+        pub fn $fn_name(
+            &self,
+            $($args: $arg_types,)*
+        ) -> Self {
+            let mut fp_state = self.fp_state;
+            let value = self
+                .value
+                .$called_fn_name($($args,)* Some(&mut fp_state));
+            Self {
+                fp_state,
+                value,
+                _private: (),
+            }
+        }
+    };
+    (
+        $fn_name:ident, $checked_fn_name:ident, $called_fn_name:ident,
+        (&self$(, $before_args:ident: $before_arg_types:ty)*),
+        ($($float_args:ident: &Self),*),
+        ($($after_args:ident: $after_arg_types:ty),*)
+    ) => {
+        pub fn $fn_name(
+            &self,
+            $($before_args: $before_args_type,)*
+            $($float_args: &Self,)*
+            $($after_args: $after_arg_types,)*
+        ) -> Self {
+            let mut fp_state = self.fp_state;
+            $(fp_state.merge_assign($float_args.fp_state);)*
+            let value = self
+                .value
+                .$called_fn_name($($before_args,)* $(&$float_args.value,)* $($after_args,)* Some(&mut fp_state));
+            Self {
+                fp_state,
+                value,
+                _private: (),
+            }
+        }
+        pub fn $checked_fn_name(
+            &self,
+            $($before_args: $before_args_type,)*
+            $($float_args: &Self,)*
+            $($after_args: $after_arg_types,)*
+        ) -> Result<Self, FPStateMergeFailed> {
+            let mut fp_state = self.fp_state;
+            $(fp_state.checked_merge_assign($float_args.fp_state)?;)*
+            let value = self
+                .value
+                .$called_fn_name($($before_args,)* $(&$float_args.value,)* $($after_args,)* Some(&mut fp_state));
+            Ok(Self {
+                fp_state,
+                value,
+                _private: (),
+            })
+        }
+    };
+}
+
+macro_rules! impl_dynamic_float_from_int_type {
+    ($from_int_with_traits:ident, $from_int:ident, $int:ident) => {
+        /// `rounding_mode` only used for this conversion
+        pub fn $from_int(
+            value: $int,
+            rounding_mode: Option<RoundingMode>,
+            fp_state: Option<FPState>,
+            properties: FloatProperties,
+        ) -> Self {
+            let mut fp_state = fp_state.unwrap_or_default();
+            let value =
+                Float::$from_int_with_traits(value, rounding_mode, Some(&mut fp_state), properties);
+            Self {
+                fp_state,
+                value,
+                _private: (),
+            }
+        }
+    };
+}
+
+macro_rules! impl_dynamic_float_to_int_type {
+    ($name:ident, $int:ident) => {
+        pub fn $name(
+            &self,
+            exact: bool,
+            rounding_mode: Option<RoundingMode>,
+        ) -> (Option<$int>, FPState) {
+            let mut fp_state = self.fp_state;
+            let result = self.value.$name(exact, rounding_mode, Some(&mut fp_state));
+            (result, fp_state)
+        }
+    };
 }
 
 impl DynamicFloat {
@@ -3112,6 +3336,375 @@ impl DynamicFloat {
             value: Float::from_bits_and_traits(BigUint::zero(), properties),
             _private: (),
         }
+    }
+    pub fn from_bits(bits: BigUint, properties: FloatProperties) -> Option<Self> {
+        if bits <= properties.overall_mask::<BigUint>() {
+            Some(Self {
+                fp_state: FPState::default(),
+                value: Float::from_bits_and_traits(bits, properties),
+                _private: (),
+            })
+        } else {
+            None
+        }
+    }
+    pub fn into_bits(self) -> BigUint {
+        self.value.into_bits()
+    }
+    pub fn positive_zero(properties: FloatProperties) -> Self {
+        Float::positive_zero_with_traits(properties).into()
+    }
+    pub fn negative_zero(properties: FloatProperties) -> Self {
+        Float::negative_zero_with_traits(properties).into()
+    }
+    pub fn signed_zero(sign: Sign, properties: FloatProperties) -> Self {
+        Float::signed_zero_with_traits(sign, properties).into()
+    }
+    pub fn positive_infinity(properties: FloatProperties) -> Self {
+        Float::positive_infinity_with_traits(properties).into()
+    }
+    pub fn negative_infinity(properties: FloatProperties) -> Self {
+        Float::negative_infinity_with_traits(properties).into()
+    }
+    pub fn signed_infinity(sign: Sign, properties: FloatProperties) -> Self {
+        Float::signed_infinity_with_traits(sign, properties).into()
+    }
+    pub fn quiet_nan(properties: FloatProperties) -> Self {
+        Float::quiet_nan_with_traits(properties).into()
+    }
+    pub fn signaling_nan(properties: FloatProperties) -> Self {
+        Float::signaling_nan_with_traits(properties).into()
+    }
+    pub fn into_quiet_nan(self) -> Self {
+        let Self {
+            fp_state,
+            value,
+            _private: _,
+        } = self;
+        Self {
+            fp_state,
+            value: value.into_quiet_nan(),
+            _private: (),
+        }
+    }
+    pub fn to_quiet_nan(&self) -> Self {
+        let Self {
+            fp_state,
+            ref value,
+            _private: _,
+        } = *self;
+        Self {
+            fp_state,
+            value: value.to_quiet_nan(),
+            _private: (),
+        }
+    }
+    pub fn signed_max_normal(sign: Sign, properties: FloatProperties) -> Self {
+        Float::signed_max_normal_with_traits(sign, properties).into()
+    }
+    pub fn signed_min_subnormal(sign: Sign, properties: FloatProperties) -> Self {
+        Float::signed_min_subnormal_with_traits(sign, properties).into()
+    }
+    /// `rounding_mode` only used for this conversion
+    pub fn from_real_algebraic_number(
+        value: &RealAlgebraicNumber,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<FPState>,
+        properties: FloatProperties,
+    ) -> Self {
+        let mut fp_state = fp_state.unwrap_or_default();
+        let value = Float::from_real_algebraic_number_with_traits(
+            value,
+            rounding_mode,
+            Some(&mut fp_state),
+            properties,
+        );
+        Self {
+            fp_state,
+            value,
+            _private: (),
+        }
+    }
+    impl_dynamic_float_fn!(
+        add_with_rounding_mode,
+        checked_add_with_rounding_mode,
+        add,
+        (&self),
+        (rhs: &Self),
+        (rounding_mode: Option<RoundingMode>)
+    );
+    impl_dynamic_float_fn!(
+        sub_with_rounding_mode,
+        checked_sub_with_rounding_mode,
+        sub,
+        (&self),
+        (rhs: &Self),
+        (rounding_mode: Option<RoundingMode>)
+    );
+    impl_dynamic_float_fn!(
+        mul_with_rounding_mode,
+        checked_mul_with_rounding_mode,
+        mul,
+        (&self),
+        (rhs: &Self),
+        (rounding_mode: Option<RoundingMode>)
+    );
+    impl_dynamic_float_fn!(
+        div_with_rounding_mode,
+        checked_div_with_rounding_mode,
+        div,
+        (&self),
+        (rhs: &Self),
+        (rounding_mode: Option<RoundingMode>)
+    );
+    impl_dynamic_float_fn!(
+        ieee754_remainder,
+        checked_ieee754_remainder,
+        ieee754_remainder,
+        (&self),
+        (rhs: &Self),
+        (rounding_mode: Option<RoundingMode>)
+    );
+    impl_dynamic_float_fn!(
+        fused_mul_add,
+        checked_fused_mul_add,
+        fused_mul_add,
+        (&self),
+        (factor: &Self, term: &Self),
+        (rounding_mode: Option<RoundingMode>)
+    );
+    pub fn round_to_integer(
+        &self,
+        exact: bool,
+        rounding_mode: Option<RoundingMode>,
+    ) -> (Option<BigInt>, FPState) {
+        let mut fp_state = self.fp_state;
+        let value = self
+            .value
+            .round_to_integer(exact, rounding_mode, Some(&mut fp_state));
+        (value, fp_state)
+    }
+    impl_dynamic_float_fn!(
+        round_to_integral,
+        round_to_integral,
+        (&self, exact: bool, rounding_mode: Option<RoundingMode>)
+    );
+    impl_dynamic_float_fn!(
+        next_up_or_down,
+        next_up_or_down,
+        (&self, up_or_down: UpOrDown)
+    );
+    impl_dynamic_float_fn!(next_up, next_up, (&self));
+    impl_dynamic_float_fn!(next_down, next_down, (&self));
+    pub fn log_b(&self) -> (Option<BigInt>, FPState) {
+        let mut fp_state = self.fp_state;
+        let value = self.value.log_b(Some(&mut fp_state));
+        (value, fp_state)
+    }
+    impl_dynamic_float_fn!(
+        scale_b,
+        scale_b,
+        (&self, scale: BigInt, rounding_mode: Option<RoundingMode>)
+    );
+    impl_dynamic_float_fn!(sqrt, sqrt, (&self, rounding_mode: Option<RoundingMode>));
+    pub fn convert_from_dynamic_float(
+        src: &Self,
+        rounding_mode: Option<RoundingMode>,
+        properties: FloatProperties,
+    ) -> Self {
+        let mut fp_state = src.fp_state;
+        let value = Float::convert_from_float_with_traits(
+            &src.value,
+            rounding_mode,
+            Some(&mut fp_state),
+            properties,
+        );
+        Self {
+            fp_state,
+            value,
+            _private: (),
+        }
+    }
+    /// `rounding_mode` only used for this conversion
+    pub fn convert_from_float<SrcFT: FloatTraits>(
+        src: &Float<SrcFT>,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<FPState>,
+        properties: FloatProperties,
+    ) -> Self {
+        let mut fp_state = fp_state.unwrap_or_default();
+        let value = Float::convert_from_float_with_traits(
+            src,
+            rounding_mode,
+            Some(&mut fp_state),
+            properties,
+        );
+        Self {
+            fp_state,
+            value,
+            _private: (),
+        }
+    }
+    pub fn convert_to_dynamic_float(
+        &self,
+        rounding_mode: Option<RoundingMode>,
+        properties: FloatProperties,
+    ) -> Self {
+        Self::convert_from_dynamic_float(self, rounding_mode, properties)
+    }
+    pub fn abs(&self) -> Self {
+        let mut retval = self.clone();
+        retval.abs_assign();
+        retval
+    }
+    pub fn copy_sign<FT2: FloatTraits>(&self, sign_src: &Float<FT2>) -> Self {
+        let mut retval = self.clone();
+        retval.set_sign(sign_src.sign());
+        retval
+    }
+    pub fn compare(&self, rhs: &Self, quiet: bool) -> (Option<Ordering>, FPState) {
+        let mut fp_state = self.fp_state;
+        fp_state.merge_assign(rhs.fp_state);
+        let result = self.value.compare(&rhs.value, quiet, Some(&mut fp_state));
+        (result, fp_state)
+    }
+    pub fn checked_compare(
+        &self,
+        rhs: &Self,
+        quiet: bool,
+    ) -> Result<(Option<Ordering>, FPState), FPStateMergeFailed> {
+        let mut fp_state = self.fp_state;
+        fp_state.checked_merge_assign(rhs.fp_state)?;
+        let result = self.value.compare(&rhs.value, quiet, Some(&mut fp_state));
+        Ok((result, fp_state))
+    }
+    pub fn compare_quiet(&self, rhs: &Self) -> (Option<Ordering>, FPState) {
+        let mut fp_state = self.fp_state;
+        fp_state.merge_assign(rhs.fp_state);
+        let result = self.value.compare_quiet(&rhs.value, Some(&mut fp_state));
+        (result, fp_state)
+    }
+    pub fn checked_compare_quiet(
+        &self,
+        rhs: &Self,
+    ) -> Result<(Option<Ordering>, FPState), FPStateMergeFailed> {
+        let mut fp_state = self.fp_state;
+        fp_state.checked_merge_assign(rhs.fp_state)?;
+        let result = self.value.compare_quiet(&rhs.value, Some(&mut fp_state));
+        Ok((result, fp_state))
+    }
+    pub fn compare_signaling(&self, rhs: &Self) -> (Option<Ordering>, FPState) {
+        let mut fp_state = self.fp_state;
+        fp_state.merge_assign(rhs.fp_state);
+        let result = self
+            .value
+            .compare_signaling(&rhs.value, Some(&mut fp_state));
+        (result, fp_state)
+    }
+    pub fn checked_compare_signaling(
+        &self,
+        rhs: &Self,
+    ) -> Result<(Option<Ordering>, FPState), FPStateMergeFailed> {
+        let mut fp_state = self.fp_state;
+        fp_state.checked_merge_assign(rhs.fp_state)?;
+        let result = self
+            .value
+            .compare_signaling(&rhs.value, Some(&mut fp_state));
+        Ok((result, fp_state))
+    }
+    impl_dynamic_float_from_int_type!(from_bigint_with_traits, from_bigint, BigInt);
+    impl_dynamic_float_from_int_type!(from_biguint_with_traits, from_biguint, BigUint);
+    impl_dynamic_float_from_int_type!(from_u8_with_traits, from_u8, u8);
+    impl_dynamic_float_from_int_type!(from_u16_with_traits, from_u16, u16);
+    impl_dynamic_float_from_int_type!(from_u32_with_traits, from_u32, u32);
+    impl_dynamic_float_from_int_type!(from_u64_with_traits, from_u64, u64);
+    impl_dynamic_float_from_int_type!(from_u128_with_traits, from_u128, u128);
+    impl_dynamic_float_from_int_type!(from_usize_with_traits, from_usize, usize);
+    impl_dynamic_float_from_int_type!(from_i8_with_traits, from_i8, i8);
+    impl_dynamic_float_from_int_type!(from_i16_with_traits, from_i16, i16);
+    impl_dynamic_float_from_int_type!(from_i32_with_traits, from_i32, i32);
+    impl_dynamic_float_from_int_type!(from_i64_with_traits, from_i64, i64);
+    impl_dynamic_float_from_int_type!(from_i128_with_traits, from_i128, i128);
+    impl_dynamic_float_from_int_type!(from_isize_with_traits, from_isize, isize);
+    impl_dynamic_float_to_int_type!(to_bigint, BigInt);
+    impl_dynamic_float_to_int_type!(to_biguint, BigUint);
+    impl_dynamic_float_to_int_type!(to_u8, u8);
+    impl_dynamic_float_to_int_type!(to_u16, u16);
+    impl_dynamic_float_to_int_type!(to_u32, u32);
+    impl_dynamic_float_to_int_type!(to_u64, u64);
+    impl_dynamic_float_to_int_type!(to_u128, u128);
+    impl_dynamic_float_to_int_type!(to_usize, usize);
+    impl_dynamic_float_to_int_type!(to_i8, i8);
+    impl_dynamic_float_to_int_type!(to_i16, i16);
+    impl_dynamic_float_to_int_type!(to_i32, i32);
+    impl_dynamic_float_to_int_type!(to_i64, i64);
+    impl_dynamic_float_to_int_type!(to_i128, i128);
+    impl_dynamic_float_to_int_type!(to_isize, isize);
+    impl_dynamic_float_fn!(rsqrt, rsqrt, (&self, rounding_mode: Option<RoundingMode>));
+}
+
+macro_rules! impl_dynamic_float_binary_op_trait {
+    ($op_trait:ident, $op:ident, $op_assign_trait:ident, $op_assign:ident, $called_fn_name:ident) => {
+        impl $op_trait for DynamicFloat {
+            type Output = DynamicFloat;
+            fn $op(self, rhs: DynamicFloat) -> DynamicFloat {
+                self.$called_fn_name(&rhs, None)
+            }
+        }
+
+        impl $op_trait<&'_ DynamicFloat> for DynamicFloat {
+            type Output = DynamicFloat;
+            fn $op(self, rhs: &DynamicFloat) -> DynamicFloat {
+                self.$called_fn_name(rhs, None)
+            }
+        }
+        impl $op_trait<DynamicFloat> for &'_ DynamicFloat {
+            type Output = DynamicFloat;
+            fn $op(self, rhs: DynamicFloat) -> DynamicFloat {
+                self.$called_fn_name(&rhs, None)
+            }
+        }
+
+        impl<'a, 'b> $op_trait<&'a DynamicFloat> for &'b DynamicFloat {
+            type Output = DynamicFloat;
+            fn $op(self, rhs: &DynamicFloat) -> DynamicFloat {
+                self.$called_fn_name(rhs, None)
+            }
+        }
+
+        impl $op_assign_trait for DynamicFloat {
+            fn $op_assign(&mut self, rhs: DynamicFloat) {
+                *self = self.$called_fn_name(&rhs, None);
+            }
+        }
+
+        impl $op_assign_trait<&'_ DynamicFloat> for DynamicFloat {
+            fn $op_assign(&mut self, rhs: &DynamicFloat) {
+                *self = self.$called_fn_name(rhs, None);
+            }
+        }
+    };
+}
+
+impl_dynamic_float_binary_op_trait!(Add, add, AddAssign, add_assign, add_with_rounding_mode);
+impl_dynamic_float_binary_op_trait!(Sub, sub, SubAssign, sub_assign, sub_with_rounding_mode);
+impl_dynamic_float_binary_op_trait!(Mul, mul, MulAssign, mul_assign, mul_with_rounding_mode);
+impl_dynamic_float_binary_op_trait!(Div, div, DivAssign, div_assign, div_with_rounding_mode);
+
+impl Neg for &'_ DynamicFloat {
+    type Output = DynamicFloat;
+    fn neg(self) -> DynamicFloat {
+        let mut retval = self.clone();
+        retval.neg_assign();
+        retval
+    }
+}
+
+impl Neg for DynamicFloat {
+    type Output = DynamicFloat;
+    fn neg(mut self) -> DynamicFloat {
+        self.neg_assign();
+        self
     }
 }
 
