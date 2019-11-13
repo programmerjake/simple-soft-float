@@ -20,6 +20,7 @@ use crate::TernaryNaNPropagationMode;
 use crate::TininessDetectionMode;
 use crate::UnaryNaNPropagationMode;
 use crate::UpOrDown;
+use num_bigint::BigInt;
 use num_bigint::BigUint;
 use once_cell::sync::OnceCell;
 use pyo3::basic::CompareOp;
@@ -313,10 +314,6 @@ impl IntoPy<PyObject> for DynamicFloat {
 
 #[pymethods]
 impl PyDynamicFloat {
-    #[getter(fp_state)]
-    fn fp_state(&self) -> FPState {
-        self.value().fp_state
-    }
     #[new]
     #[args(
         value = "None",
@@ -376,6 +373,102 @@ impl PyDynamicFloat {
     fn bits(&self) -> BigUint {
         self.value().bits().clone()
     }
+    #[getter]
+    fn fp_state(&self) -> FPState {
+        self.value().fp_state
+    }
+    #[getter]
+    fn properties(&self) -> FloatProperties {
+        self.value().properties()
+    }
+    #[getter]
+    fn sign(&self) -> Sign {
+        self.value().sign()
+    }
+    #[getter]
+    fn exponent_field(&self) -> BigUint {
+        self.value().exponent_field()
+    }
+    #[getter]
+    fn mantissa_field(&self) -> BigUint {
+        self.value().mantissa_field()
+    }
+    #[getter]
+    fn mantissa_field_msb(&self) -> bool {
+        self.value().mantissa_field_msb()
+    }
+    #[getter]
+    fn float_class(&self) -> FloatClass {
+        self.value().class()
+    }
+    #[getter]
+    fn is_negative_infinity(&self) -> bool {
+        self.value().is_negative_infinity()
+    }
+    #[getter]
+    fn is_negative_normal(&self) -> bool {
+        self.value().is_negative_normal()
+    }
+    #[getter]
+    fn is_negative_subnormal(&self) -> bool {
+        self.value().is_negative_subnormal()
+    }
+    #[getter]
+    fn is_negative_zero(&self) -> bool {
+        self.value().is_negative_zero()
+    }
+    #[getter]
+    fn is_positive_infinity(&self) -> bool {
+        self.value().is_positive_infinity()
+    }
+    #[getter]
+    fn is_positive_normal(&self) -> bool {
+        self.value().is_positive_normal()
+    }
+    #[getter]
+    fn is_positive_subnormal(&self) -> bool {
+        self.value().is_positive_subnormal()
+    }
+    #[getter]
+    fn is_positive_zero(&self) -> bool {
+        self.value().is_positive_zero()
+    }
+    #[getter]
+    fn is_quiet_nan(&self) -> bool {
+        self.value().is_quiet_nan()
+    }
+    #[getter]
+    fn is_signaling_nan(&self) -> bool {
+        self.value().is_signaling_nan()
+    }
+    #[getter]
+    fn is_infinity(&self) -> bool {
+        self.value().is_infinity()
+    }
+    #[getter]
+    fn is_normal(&self) -> bool {
+        self.value().is_normal()
+    }
+    #[getter]
+    fn is_subnormal(&self) -> bool {
+        self.value().is_subnormal()
+    }
+    #[getter]
+    fn is_zero(&self) -> bool {
+        self.value().is_zero()
+    }
+    #[getter]
+    fn is_nan(&self) -> bool {
+        self.value().is_nan()
+    }
+    #[getter]
+    fn is_finite(&self) -> bool {
+        self.value().is_finite()
+    }
+    #[getter]
+    fn is_subnormal_or_zero(&self) -> bool {
+        self.value().is_subnormal_or_zero()
+    }
     #[staticmethod]
     fn positive_zero(properties: FloatProperties) -> DynamicFloat {
         DynamicFloat::positive_zero(properties)
@@ -431,7 +524,145 @@ impl PyDynamicFloat {
         value.properties().check_compatibility(rhs.properties())?;
         Ok(value.checked_add_with_rounding_mode(rhs, rounding_mode)?)
     }
-    // FIXME: finish
+    #[args(rounding_mode = "None")]
+    fn sub(
+        &self,
+        rhs: &DynamicFloat,
+        rounding_mode: Option<RoundingMode>,
+    ) -> PyResult<DynamicFloat> {
+        let value = self.value();
+        value.properties().check_compatibility(rhs.properties())?;
+        Ok(value.checked_sub_with_rounding_mode(rhs, rounding_mode)?)
+    }
+    #[args(rounding_mode = "None")]
+    fn mul(
+        &self,
+        rhs: &DynamicFloat,
+        rounding_mode: Option<RoundingMode>,
+    ) -> PyResult<DynamicFloat> {
+        let value = self.value();
+        value.properties().check_compatibility(rhs.properties())?;
+        Ok(value.checked_mul_with_rounding_mode(rhs, rounding_mode)?)
+    }
+    #[args(rounding_mode = "None")]
+    fn div(
+        &self,
+        rhs: &DynamicFloat,
+        rounding_mode: Option<RoundingMode>,
+    ) -> PyResult<DynamicFloat> {
+        let value = self.value();
+        value.properties().check_compatibility(rhs.properties())?;
+        Ok(value.checked_div_with_rounding_mode(rhs, rounding_mode)?)
+    }
+    #[args(rounding_mode = "None")]
+    fn ieee754_remainder(
+        &self,
+        rhs: &DynamicFloat,
+        rounding_mode: Option<RoundingMode>,
+    ) -> PyResult<DynamicFloat> {
+        let value = self.value();
+        value.properties().check_compatibility(rhs.properties())?;
+        Ok(value.checked_ieee754_remainder(rhs, rounding_mode)?)
+    }
+    #[args(rounding_mode = "None")]
+    fn fused_mul_add(
+        &self,
+        factor: &DynamicFloat,
+        term: &DynamicFloat,
+        rounding_mode: Option<RoundingMode>,
+    ) -> PyResult<DynamicFloat> {
+        let value = self.value();
+        value
+            .properties()
+            .check_compatibility(factor.properties())?;
+        value.properties().check_compatibility(term.properties())?;
+        Ok(value.checked_fused_mul_add(factor, term, rounding_mode)?)
+    }
+    #[args("*", exact = "false", rounding_mode = "None")]
+    fn round_to_integer(
+        &self,
+        exact: bool,
+        rounding_mode: Option<RoundingMode>,
+    ) -> (Option<BigInt>, FPState) {
+        self.value().round_to_integer(exact, rounding_mode)
+    }
+    #[args("*", exact = "false", rounding_mode = "None")]
+    fn round_to_integral(&self, exact: bool, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+        self.value().round_to_integral(exact, rounding_mode)
+    }
+    fn next_up_or_down(&self, up_or_down: UpOrDown) -> DynamicFloat {
+        self.value().next_up_or_down(up_or_down)
+    }
+    fn next_up(&self) -> DynamicFloat {
+        self.value().next_up()
+    }
+    fn next_down(&self) -> DynamicFloat {
+        self.value().next_down()
+    }
+    fn log_b(&self) -> (Option<BigInt>, FPState) {
+        self.value().log_b()
+    }
+    #[args(rounding_mode = "None")]
+    fn scale_b(&self, scale: BigInt, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+        self.value().scale_b(scale, rounding_mode)
+    }
+    #[args(rounding_mode = "None")]
+    fn sqrt(&self, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+        self.value().sqrt(rounding_mode)
+    }
+    fn convert_to_dynamic_float(
+        &self,
+        rounding_mode: Option<RoundingMode>,
+        properties: FloatProperties,
+    ) -> DynamicFloat {
+        self.value()
+            .convert_to_dynamic_float(rounding_mode, properties)
+    }
+    fn abs(&self) -> DynamicFloat {
+        self.value().abs()
+    }
+    fn neg(&self) -> DynamicFloat {
+        -self.value()
+    }
+    fn copy_sign(&self, sign_src: &PyDynamicFloat) -> DynamicFloat {
+        self.value().copy_sign(sign_src.value())
+    }
+    fn compare(&self, rhs: &PyDynamicFloat, quiet: bool) -> PyResult<(Option<i32>, FPState)> {
+        let value = self.value();
+        let rhs = rhs.value();
+        value.properties().check_compatibility(rhs.properties())?;
+        let (ordering, fp_state) = value.checked_compare(rhs, quiet)?;
+        Ok((ordering.map(|ordering| ordering as i32), fp_state))
+    }
+    fn compare_quiet(&self, rhs: &PyDynamicFloat) -> PyResult<(Option<i32>, FPState)> {
+        self.compare(rhs, true)
+    }
+    fn compare_signaling(&self, rhs: &PyDynamicFloat) -> PyResult<(Option<i32>, FPState)> {
+        self.compare(rhs, false)
+    }
+    /// `rounding_mode` only used for this conversion
+    #[staticmethod]
+    #[args(value, properties, "*", rounding_mode = "None", fp_state = "None")]
+    fn from_int(
+        value: BigInt,
+        properties: FloatProperties,
+        rounding_mode: Option<RoundingMode>,
+        fp_state: Option<FPState>,
+    ) -> DynamicFloat {
+        DynamicFloat::from_bigint(value, rounding_mode, fp_state, properties)
+    }
+    #[args(exact = "false", rounding_mode = "None")]
+    fn to_int(
+        &self,
+        exact: bool,
+        rounding_mode: Option<RoundingMode>,
+    ) -> (Option<BigInt>, FPState) {
+        self.value().to_bigint(exact, rounding_mode)
+    }
+    #[args(rounding_mode = "None")]
+    fn rsqrt(&self, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+        self.value().rsqrt(rounding_mode)
+    }
 }
 
 #[pyproto]
@@ -439,7 +670,21 @@ impl PyNumberProtocol for PyDynamicFloat {
     fn __add__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
         lhs.add(rhs, None)
     }
-    // FIXME: finish
+    fn __sub__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
+        lhs.sub(rhs, None)
+    }
+    fn __mul__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
+        lhs.mul(rhs, None)
+    }
+    fn __truediv__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
+        lhs.div(rhs, None)
+    }
+    fn __abs__(&self) -> PyResult<DynamicFloat> {
+        Ok(self.abs())
+    }
+    fn __neg__(&self) -> PyResult<DynamicFloat> {
+        Ok(self.neg())
+    }
 }
 
 macro_rules! impl_platform_properties_new {
@@ -568,8 +813,6 @@ impl PlatformProperties {
     fn rsqrt_nan_propagation_mode(&self) -> UnaryNaNPropagationMode {
         self.rsqrt_nan_propagation_mode
     }
-
-    // FIXME: finish
 }
 
 #[pyclass(name = FloatProperties, module = "simple_soft_float")]

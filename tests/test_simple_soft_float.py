@@ -3,6 +3,7 @@
 
 import simple_soft_float as ssf
 import unittest
+import operator
 
 
 class TestBinaryNaNPropagationMode(unittest.TestCase):
@@ -355,10 +356,279 @@ class TestStatusFlags(unittest.TestCase):
 
 class TestDynamicFloat(unittest.TestCase):
     maxDiff = None
+    properties = ssf.FloatProperties.standard(32,
+                                              ssf.PlatformProperties_RISC_V)
 
     def test_construct(self):
-        # FIXME: finish
-        pass
+        obj = ssf.DynamicFloat(properties=self.properties)
+        self.assertEqual(obj.properties, self.properties)
+        self.assertEqual(obj.bits, 0)
+        self.assertEqual(obj.fp_state, ssf.FPState())
+        obj = ssf.DynamicFloat(obj, bits=0x1)
+        self.assertEqual(obj.properties, self.properties)
+        self.assertEqual(obj.bits, 0x1)
+        self.assertEqual(obj.fp_state, ssf.FPState())
+        obj = ssf.DynamicFloat(properties=self.properties, bits=0x2)
+        self.assertEqual(obj.properties, self.properties)
+        self.assertEqual(obj.bits, 0x2)
+        self.assertEqual(obj.fp_state, ssf.FPState())
+        obj = ssf.DynamicFloat(
+            properties=self.properties,
+            bits=0x3,
+            fp_state=ssf.FPState(status_flags=ssf.StatusFlags.INEXACT))
+        self.assertEqual(obj.properties, self.properties)
+        self.assertEqual(obj.bits, 0x3)
+        self.assertEqual(obj.fp_state,
+                         ssf.FPState(status_flags=ssf.StatusFlags.INEXACT))
+
+    def test_constants(self):
+        cls = ssf.DynamicFloat
+        obj = cls.positive_zero(self.properties)
+        self.assertEqual(obj.bits, 0x00000000)
+        obj = cls.negative_zero(self.properties)
+        self.assertEqual(obj.bits, 0x80000000)
+        obj = cls.signed_zero(ssf.Sign.Positive, self.properties)
+        self.assertEqual(obj.bits, 0x00000000)
+        obj = cls.signed_zero(ssf.Sign.Negative, self.properties)
+        self.assertEqual(obj.bits, 0x80000000)
+        obj = cls.positive_infinity(self.properties)
+        self.assertEqual(obj.bits, 0x7F800000)
+        obj = cls.negative_infinity(self.properties)
+        self.assertEqual(obj.bits, 0xFF800000)
+        obj = cls.signed_infinity(ssf.Sign.Positive, self.properties)
+        self.assertEqual(obj.bits, 0x7F800000)
+        obj = cls.signed_infinity(ssf.Sign.Negative, self.properties)
+        self.assertEqual(obj.bits, 0xFF800000)
+        obj = cls.quiet_nan(self.properties)
+        self.assertEqual(obj.bits, 0x7FC00000)
+        obj = cls.signaling_nan(self.properties)
+        self.assertEqual(obj.bits, 0x7F800001)
+        obj = obj.to_quiet_nan()
+        self.assertEqual(obj.bits & 0x7FC00000, 0x7FC00000)
+        obj = cls.signed_max_normal(ssf.Sign.Positive, self.properties)
+        self.assertEqual(obj.bits, 0x7F7FFFFF)
+        obj = cls.signed_max_normal(ssf.Sign.Negative, self.properties)
+        self.assertEqual(obj.bits, 0xFF7FFFFF)
+        obj = cls.signed_min_subnormal(ssf.Sign.Positive, self.properties)
+        self.assertEqual(obj.bits, 0x00000001)
+        obj = cls.signed_min_subnormal(ssf.Sign.Negative, self.properties)
+        self.assertEqual(obj.bits, 0x80000001)
+        self.assertIsNone(getattr(cls, "from_real_algebraic_number", None))
+
+    def handle_binary_op(self, op_name, python_op, bits, status_flags):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = getattr(arg, op_name)(arg, rounding_mode)
+        self.assertEqual(obj.bits, bits)
+        self.assertEqual(obj.fp_state.status_flags, status_flags)
+        if python_op is not None:
+            obj = python_op(arg, arg)
+            self.assertEqual(obj.bits, bits)
+            self.assertEqual(obj.fp_state.status_flags, status_flags)
+
+    def test_add(self):
+        self.handle_binary_op("add", operator.add,
+                              0x00000000, ssf.StatusFlags(0))
+
+    def test_sub(self):
+        self.handle_binary_op("sub", operator.sub,
+                              0x00000000, ssf.StatusFlags(0))
+
+    def test_mul(self):
+        self.handle_binary_op("mul", operator.mul,
+                              0x00000000, ssf.StatusFlags(0))
+
+    def test_div(self):
+        self.handle_binary_op("div", operator.truediv,
+                              0x7FC00000, ssf.StatusFlags.INVALID_OPERATION)
+
+    def test_ieee754_remainder(self):
+        self.handle_binary_op("ieee754_remainder", None,
+                              0x7FC00000, ssf.StatusFlags.INVALID_OPERATION)
+
+    def test_fused_mul_add(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.fused_mul_add(arg, arg, rounding_mode)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_round_to_integer(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.round_to_integer(exact=True, rounding_mode=rounding_mode)
+        self.assertEqual(obj[0], 0)
+        self.assertEqual(obj[1], ssf.FPState())
+
+    def test_round_to_integral(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.round_to_integral(exact=True, rounding_mode=rounding_mode)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_next_up_or_down(self):
+        cls = ssf.DynamicFloat
+        arg = cls.positive_zero(self.properties)
+        obj = arg.next_up_or_down(ssf.UpOrDown.Up)
+        self.assertEqual(obj.bits, 0x00000001)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        obj = arg.next_up_or_down(ssf.UpOrDown.Down)
+        self.assertEqual(obj.bits, 0x80000001)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        obj = arg.next_up()
+        self.assertEqual(obj.bits, 0x00000001)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        obj = arg.next_down()
+        self.assertEqual(obj.bits, 0x80000001)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_log_b(self):
+        cls = ssf.DynamicFloat
+        arg = cls.positive_zero(self.properties)
+        obj = arg.log_b()
+        self.assertEqual(obj[0], None)
+        self.assertEqual(
+            obj[1],
+            ssf.FPState(status_flags=ssf.StatusFlags.INVALID_OPERATION))
+
+    def test_scale_b(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.scale_b(5, rounding_mode)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_sqrt(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.sqrt(rounding_mode)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_convert_to_dynamic_float(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.convert_to_dynamic_float(rounding_mode, self.properties)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_abs(self):
+        cls = ssf.DynamicFloat
+        arg = cls.positive_zero(self.properties)
+        obj = arg.abs()
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        obj = abs(arg)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_neg(self):
+        cls = ssf.DynamicFloat
+        arg = cls.positive_zero(self.properties)
+        obj = arg.neg()
+        self.assertEqual(obj.bits, 0x80000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        obj = -arg
+        self.assertEqual(obj.bits, 0x80000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_copy_sign(self):
+        cls = ssf.DynamicFloat
+        arg = cls.positive_zero(self.properties)
+        obj = arg.copy_sign(arg)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_compare(self):
+        cls = ssf.DynamicFloat
+        zero = cls.positive_zero(self.properties)
+        inf = cls.positive_infinity(self.properties)
+        nan = cls.quiet_nan(self.properties)
+        obj = zero.compare_quiet(zero)
+        self.assertEqual(obj[0], 0)
+        self.assertEqual(obj[1], ssf.FPState())
+        obj = zero.compare_quiet(inf)
+        self.assertEqual(obj[0], -1)
+        self.assertEqual(obj[1], ssf.FPState())
+        obj = inf.compare_quiet(zero)
+        self.assertEqual(obj[0], 1)
+        self.assertEqual(obj[1], ssf.FPState())
+        obj = nan.compare_quiet(nan)
+        self.assertIsNone(obj[0])
+        self.assertEqual(obj[1], ssf.FPState())
+        obj = nan.compare_signaling(nan)
+        self.assertIsNone(obj[0])
+        self.assertEqual(
+            obj[1],
+            ssf.FPState(status_flags=ssf.StatusFlags.INVALID_OPERATION))
+        obj = zero.compare(zero, quiet=False)
+        self.assertEqual(obj[0], 0)
+        self.assertEqual(obj[1], ssf.FPState())
+
+    def test_from_int(self):
+        cls = ssf.DynamicFloat
+        obj = cls.from_int(0, self.properties)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        obj = cls.from_int(1, self.properties,
+                           rounding_mode=ssf.RoundingMode.TiesToEven,
+                           fp_state=ssf.FPState())
+        self.assertEqual(obj.bits, 0x3F800000)
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+
+    def test_to_int(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.to_int(exact=False, rounding_mode=rounding_mode)
+        self.assertEqual(obj[0], 0)
+        self.assertEqual(obj[1], ssf.FPState())
+
+    def test_rsqrt(self):
+        cls = ssf.DynamicFloat
+        rounding_mode = ssf.RoundingMode.TiesToEven
+        arg = cls.positive_zero(self.properties)
+        obj = arg.rsqrt(rounding_mode)
+        self.assertEqual(obj.bits, 0x7F800000)
+        self.assertEqual(obj.fp_state.status_flags,
+                         ssf.StatusFlags.DIVISION_BY_ZERO)
+
+    def test_attributes(self):
+        cls = ssf.DynamicFloat
+        obj = cls.positive_zero(self.properties)
+        self.assertEqual(obj.bits, 0x00000000)
+        self.assertIsInstance(obj.fp_state, ssf.FPState)
+        self.assertIsInstance(obj.properties, ssf.FloatProperties)
+        self.assertEqual(obj.sign, ssf.Sign.Positive)
+        self.assertEqual(obj.exponent_field, 0)
+        self.assertEqual(obj.mantissa_field, 0)
+        self.assertEqual(obj.mantissa_field_msb, False)
+        self.assertEqual(obj.float_class, ssf.FloatClass.PositiveZero)
+        self.assertEqual(obj.is_negative_infinity, False)
+        self.assertEqual(obj.is_negative_normal, False)
+        self.assertEqual(obj.is_negative_subnormal, False)
+        self.assertEqual(obj.is_negative_zero, False)
+        self.assertEqual(obj.is_positive_infinity, False)
+        self.assertEqual(obj.is_positive_normal, False)
+        self.assertEqual(obj.is_positive_subnormal, False)
+        self.assertEqual(obj.is_positive_zero, True)
+        self.assertEqual(obj.is_quiet_nan, False)
+        self.assertEqual(obj.is_signaling_nan, False)
+        self.assertEqual(obj.is_infinity, False)
+        self.assertEqual(obj.is_normal, False)
+        self.assertEqual(obj.is_subnormal, False)
+        self.assertEqual(obj.is_zero, True)
+        self.assertEqual(obj.is_nan, False)
+        self.assertEqual(obj.is_finite, True)
+        self.assertEqual(obj.is_subnormal_or_zero, True)
 
 
 if __name__ == '__main__':
