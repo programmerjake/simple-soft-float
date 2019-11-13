@@ -5,6 +5,7 @@
 use crate::python_macros::PythonEnum;
 use crate::BinaryNaNPropagationMode;
 use crate::DynamicFloat;
+use crate::ExceptionHandlingMode;
 use crate::FMAInfZeroQNaNResult;
 use crate::FPState;
 use crate::FloatClass;
@@ -16,9 +17,11 @@ use crate::RoundingMode;
 use crate::Sign;
 use crate::StatusFlags;
 use crate::TernaryNaNPropagationMode;
+use crate::TininessDetectionMode;
 use crate::UnaryNaNPropagationMode;
 use crate::UpOrDown;
 use num_bigint::BigUint;
+use once_cell::sync::OnceCell;
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::TypeError;
 use pyo3::exceptions::ValueError;
@@ -26,7 +29,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use pyo3::types::PyDict;
 use pyo3::types::PyType;
-use pyo3::wrap_pymodule;
+use pyo3::wrap_pyfunction;
 use pyo3::PyNativeType;
 use pyo3::PyNumberProtocol;
 use pyo3::PyObjectProtocol;
@@ -43,6 +46,30 @@ impl ToPythonRepr for bool {
             Cow::Borrowed("True")
         } else {
             Cow::Borrowed("False")
+        }
+    }
+}
+
+impl ToPythonRepr for StatusFlags {
+    fn to_python_repr(&self) -> Cow<str> {
+        let mut retval = String::new();
+        let mut first = true;
+        for &(name, value) in StatusFlags::MEMBERS {
+            if !self.contains(value) {
+                continue;
+            }
+            if first {
+                first = false;
+            } else {
+                retval += " | ";
+            }
+            retval += "StatusFlags.";
+            retval += name;
+        }
+        if first {
+            Cow::Borrowed("StatusFlags(0)")
+        } else {
+            Cow::Owned(retval)
         }
     }
 }
@@ -87,27 +114,12 @@ impl StatusFlags {
     ];
 }
 
-#[cfg(feature = "python")]
 #[pymodule]
 pub(crate) fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDynamicFloat>()?;
-    let dict = PyDict::new(py);
-    fn make_src() -> Result<String, std::fmt::Error> {
-        let mut src = String::from("import enum\n");
-        writeln!(src, "class {}(enum.Flag):", StatusFlags::NAME)?;
-        for &(name, value) in StatusFlags::MEMBERS {
-            writeln!(src, "    {} = {}", name, value.bits())?;
-        }
-        writeln!(src, "    __module__ = \"simple_soft_float\"")?;
-        Ok(src)
-    }
-    m.py().run(&make_src().unwrap(), None, Some(dict))?;
-    let class: PyObject = dict
-        .get_item(StatusFlags::NAME)
-        .expect("known to exist")
-        .into_py(py);
-    m.add(StatusFlags::NAME, class)?;
+    m.add(StatusFlags::NAME, StatusFlags::get_python_class(py))?;
     m.add_class::<PyFloatProperties>()?;
+    m.add_class::<PyFPState>()?;
     BinaryNaNPropagationMode::add_to_module(py, m)?;
     FloatToFloatConversionNaNPropagationMode::add_to_module(py, m)?;
     FMAInfZeroQNaNResult::add_to_module(py, m)?;
@@ -119,15 +131,47 @@ pub(crate) fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
     TernaryNaNPropagationMode::add_to_module(py, m)?;
     UnaryNaNPropagationMode::add_to_module(py, m)?;
     PlatformProperties::add_to_module(py, m)?;
+    ExceptionHandlingMode::add_to_module(py, m)?;
+    TininessDetectionMode::add_to_module(py, m)?;
     Ok(())
 }
 
 impl StatusFlags {
     const NAME: &'static str = "StatusFlags";
-    fn get_python_class<'p>(py: Python<'p>) -> PyObject {
-        wrap_pymodule!(simple_soft_float)(py)
-            .getattr(py, Self::NAME)
-            .unwrap()
+    fn get_python_class(py: Python) -> PyObject {
+        #[pyfunction]
+        fn status_flags_repr(value: StatusFlags) -> String {
+            value.to_python_repr().into_owned()
+        }
+        static CLASS_ONCE_CELL: OnceCell<PyObject> = OnceCell::new();
+        CLASS_ONCE_CELL
+            .get_or_init(|| {
+                let dict = PyDict::new(py);
+                dict.set_item("status_flags_repr", wrap_pyfunction!(status_flags_repr)(py))
+                    .unwrap();
+                fn make_src() -> Result<String, std::fmt::Error> {
+                    let mut src = String::new();
+                    writeln!(src, "def f(status_flags_repr):")?;
+                    writeln!(src, "    import enum")?;
+                    writeln!(src, "    class {}(enum.Flag):", StatusFlags::NAME)?;
+                    for &(name, value) in StatusFlags::MEMBERS {
+                        writeln!(src, "        {} = {}", name, value.bits())?;
+                    }
+                    writeln!(src, "        __module__ = \"simple_soft_float\"")?;
+                    writeln!(src, "        def __repr__(self):")?;
+                    writeln!(src, "            return status_flags_repr(self)")?;
+                    writeln!(src, "    return {}", StatusFlags::NAME)?;
+                    writeln!(src, "{} = f(status_flags_repr)", StatusFlags::NAME)?;
+                    Ok(src)
+                }
+                py.run(&make_src().unwrap(), None, Some(dict))
+                    .map_err(|err| err.print(py))
+                    .unwrap();
+                dict.get_item(StatusFlags::NAME)
+                    .expect("known to exist")
+                    .into_py(py)
+            })
+            .clone_ref(py)
     }
 }
 
@@ -146,6 +190,97 @@ impl<'source> FromPyObject<'source> for FPState {
 impl IntoPy<PyObject> for FPState {
     fn into_py(self, py: Python) -> PyObject {
         PyFPState { value: self }.into_py(py)
+    }
+}
+
+#[pymethods]
+impl PyFPState {
+    #[new]
+    #[args(
+        value = "None",
+        "*",
+        rounding_mode = "None",
+        status_flags = "None",
+        exception_handling_mode = "None",
+        tininess_detection_mode = "None"
+    )]
+    #[allow(clippy::new_ret_no_self)]
+    fn new(
+        obj: &PyRawObject,
+        value: Option<FPState>,
+        rounding_mode: Option<RoundingMode>,
+        status_flags: Option<StatusFlags>,
+        exception_handling_mode: Option<ExceptionHandlingMode>,
+        tininess_detection_mode: Option<TininessDetectionMode>,
+    ) {
+        let mut value = value.unwrap_or_default();
+        value.rounding_mode = rounding_mode.unwrap_or(value.rounding_mode);
+        value.status_flags = status_flags.unwrap_or(value.status_flags);
+        value.exception_handling_mode =
+            exception_handling_mode.unwrap_or(value.exception_handling_mode);
+        value.tininess_detection_mode =
+            tininess_detection_mode.unwrap_or(value.tininess_detection_mode);
+        obj.init(PyFPState { value });
+    }
+    #[getter]
+    fn rounding_mode(&self) -> RoundingMode {
+        self.value.rounding_mode
+    }
+    #[getter]
+    fn status_flags(&self) -> StatusFlags {
+        self.value.status_flags
+    }
+    #[getter]
+    fn exception_handling_mode(&self) -> ExceptionHandlingMode {
+        self.value.exception_handling_mode
+    }
+    #[getter]
+    fn tininess_detection_mode(&self) -> TininessDetectionMode {
+        self.value.tininess_detection_mode
+    }
+    fn merge(&self, other: FPState) -> PyResult<FPState> {
+        Ok(self.value.checked_merge(other)?)
+    }
+}
+
+#[pyproto]
+impl PyObjectProtocol for PyFPState {
+    fn __repr__(&self) -> PyResult<String> {
+        let mut retval = String::new();
+        write!(retval, "PlatformProperties(").unwrap();
+        let FPState {
+            rounding_mode,
+            status_flags,
+            exception_handling_mode,
+            tininess_detection_mode,
+            _non_exhaustive: _,
+        } = self.value;
+        write!(retval, "rounding_mode={}, ", rounding_mode.to_python_repr()).unwrap();
+        write!(retval, "status_flags={}, ", status_flags.to_python_repr()).unwrap();
+        write!(
+            retval,
+            "exception_handling_mode={}, ",
+            exception_handling_mode.to_python_repr()
+        )
+        .unwrap();
+        write!(
+            retval,
+            "tininess_detection_mode={}",
+            tininess_detection_mode.to_python_repr()
+        )
+        .unwrap();
+        write!(retval, ")").unwrap();
+        Ok(retval)
+    }
+    fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
+        if let Ok(rhs) = FPState::extract(other) {
+            match op {
+                CompareOp::Eq => return Ok((self.value == rhs).into_py(other.py())),
+                CompareOp::Ne => return Ok((self.value != rhs).into_py(other.py())),
+                CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {}
+            };
+        }
+        Ok(other.py().NotImplemented())
     }
 }
 
@@ -190,6 +325,7 @@ impl PyDynamicFloat {
         fp_state = "None",
         properties = "None"
     )]
+    #[allow(clippy::new_ret_no_self)]
     fn new(
         obj: &PyRawObject,
         value: Option<&DynamicFloat>,
@@ -198,7 +334,7 @@ impl PyDynamicFloat {
         properties: Option<FloatProperties>,
     ) -> PyResult<()> {
         let result = || -> PyResult<DynamicFloat> {
-            let fp_state = fp_state.or(value.map(|value| value.fp_state));
+            let fp_state = fp_state.or_else(|| value.map(|value| value.fp_state));
             let mut value = if let Some(properties) = properties {
                 if let Some(bits) = bits {
                     DynamicFloat::from_bits(bits, properties)
@@ -331,6 +467,7 @@ macro_rules! impl_platform_properties_new {
         impl PyObjectProtocol for PlatformProperties {
             fn __repr__(&self) -> PyResult<String> {
                 #![allow(unused_assignments)]
+                #![allow(clippy::useless_let_if_seq)]
                 let mut retval = String::new();
                 write!(retval, "PlatformProperties(").unwrap();
                 let mut first = true;

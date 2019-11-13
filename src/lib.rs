@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // See Notices.txt for copyright information
 
+#![allow(clippy::unneeded_field_pattern)]
+#![allow(clippy::too_many_arguments)]
+
 use algebraics::prelude::*;
 use bitflags::bitflags;
 use num_bigint::BigInt;
@@ -168,10 +171,12 @@ impl Default for StatusFlags {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum ExceptionHandlingMode {
-    DefaultIgnoreExactUnderflow,
-    DefaultSignalExactUnderflow,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_exception_handling_mode_enum)]
+    pub enum ExceptionHandlingMode {
+        DefaultIgnoreExactUnderflow,
+        DefaultSignalExactUnderflow,
+    }
 }
 
 impl Default for ExceptionHandlingMode {
@@ -180,10 +185,12 @@ impl Default for ExceptionHandlingMode {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum TininessDetectionMode {
-    BeforeRounding,
-    AfterRounding,
+python_enum! {
+    #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_tininess_detection_mode_enum)]
+    pub enum TininessDetectionMode {
+        AfterRounding,
+        BeforeRounding,
+    }
 }
 
 impl Default for TininessDetectionMode {
@@ -2785,25 +2792,23 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                         retval.set_mantissa_field(mantissa + Bits::one());
                         retval
                     }
-                } else {
-                    if mantissa <= properties.mantissa_field_normal_min() {
-                        let exponent = self.exponent_field();
-                        if exponent == properties.exponent_zero_subnormal() {
-                            assert!(!mantissa.is_zero());
-                            let mut retval = self.clone();
-                            retval.set_mantissa_field(mantissa - Bits::one());
-                            retval
-                        } else {
-                            let mut retval = self.clone();
-                            retval.set_mantissa_field(properties.mantissa_field_max());
-                            retval.set_exponent_field(exponent - Bits::one());
-                            retval
-                        }
-                    } else {
+                } else if mantissa <= properties.mantissa_field_normal_min() {
+                    let exponent = self.exponent_field();
+                    if exponent == properties.exponent_zero_subnormal() {
+                        assert!(!mantissa.is_zero());
                         let mut retval = self.clone();
                         retval.set_mantissa_field(mantissa - Bits::one());
                         retval
+                    } else {
+                        let mut retval = self.clone();
+                        retval.set_mantissa_field(properties.mantissa_field_max());
+                        retval.set_exponent_field(exponent - Bits::one());
+                        retval
                     }
+                } else {
+                    let mut retval = self.clone();
+                    retval.set_mantissa_field(mantissa - Bits::one());
+                    retval
                 }
             }
         }
