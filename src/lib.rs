@@ -42,11 +42,17 @@ use std::ops::Sub;
 use std::ops::SubAssign;
 
 #[cfg(feature = "python")]
+use crate::python::PyPlatformProperties;
+#[cfg(feature = "python")]
+use crate::python::ToPythonRepr;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "python")]
+use std::borrow::Cow;
 
-mod python;
 #[macro_use]
 mod python_macros;
+mod python;
 
 #[cfg(test)]
 mod test_cases;
@@ -828,7 +834,6 @@ impl Default for QuietNaNFormat {
     }
 }
 
-#[cfg_attr(feature = "python", pyclass(module = "simple_soft_float"))]
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PlatformProperties {
     pub canonical_nan_sign: Sign,
@@ -902,11 +907,22 @@ macro_rules! platform_properties_constants {
         )+
     ) => {
         #[cfg(feature = "python")]
-        impl PlatformProperties {
+        impl PyPlatformProperties {
             fn add_to_module(py: Python, m: &PyModule) -> PyResult<()> {
                 m.add_class::<Self>()?;
-                $(m.add::<PyObject>(concat!("PlatformProperties_", stringify!($ident)), Self::$ident.into_py(py))?;)+
+                $(m.add::<PyObject>(concat!("PlatformProperties_", stringify!($ident)), PlatformProperties::$ident.into_py(py))?;)+
                 Ok(())
+            }
+        }
+
+        #[cfg(feature = "python")]
+        impl ToPythonRepr for PlatformProperties {
+            fn to_python_repr(&self) -> Cow<str> {
+                $(if *self == PlatformProperties::$ident {
+                    Cow::Borrowed(concat!("PlatformProperties_", stringify!($ident)))
+                } else)+ {
+                    self.fallback_to_python_repr()
+                }
             }
         }
 
@@ -1028,20 +1044,6 @@ platform_properties_constants! {
     );
 }
 
-python_methods! {
-    #[pymethods]
-    impl PlatformProperties {
-        #[getter]
-        pub fn quiet_nan_format(&self) -> QuietNaNFormat {
-            if self.canonical_nan_mantissa_msb {
-                QuietNaNFormat::Standard
-            } else {
-                QuietNaNFormat::MIPSLegacy
-            }
-        }
-    }
-}
-
 impl PlatformProperties {
     pub const fn new_simple(
         canonical_nan_sign: Sign,
@@ -1073,6 +1075,13 @@ impl PlatformProperties {
     }
     pub const fn default() -> Self {
         Self::RISC_V
+    }
+    pub fn quiet_nan_format(self) -> QuietNaNFormat {
+        if self.canonical_nan_mantissa_msb {
+            QuietNaNFormat::Standard
+        } else {
+            QuietNaNFormat::MIPSLegacy
+        }
     }
 }
 

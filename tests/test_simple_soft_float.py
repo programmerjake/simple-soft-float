@@ -4,6 +4,15 @@
 import simple_soft_float as ssf
 import unittest
 import operator
+import inspect
+
+
+def check_signatures(test_case, cls):
+    test_case.assertIsNotNone(inspect.signature(cls))
+    for name, member in cls.__dict__.items():
+        if name.startswith("_") or not callable(member):
+            continue
+        test_case.assertIsNotNone(inspect.signature(member))
 
 
 class TestBinaryNaNPropagationMode(unittest.TestCase):
@@ -155,6 +164,9 @@ class TestUpOrDown(unittest.TestCase):
 class TestFPState(unittest.TestCase):
     maxDiff = None
 
+    def test_signatures(self):
+        check_signatures(self, ssf.FPState)
+
     def test_smoke_test(self):
         rounding_mode = ssf.RoundingMode.TiesToEven
         status_flags = ssf.StatusFlags(0)
@@ -181,6 +193,9 @@ class TestFPState(unittest.TestCase):
 
 class TestFloatProperties(unittest.TestCase):
     maxDiff = None
+
+    def test_signatures(self):
+        check_signatures(self, ssf.FloatProperties)
 
     def test_smoke_test(self):
         obj = ssf.FloatProperties(
@@ -216,35 +231,41 @@ class TestFloatProperties(unittest.TestCase):
         self.assertEqual(obj.exponent_min_normal, 1)
         self.assertEqual(obj.exponent_max_normal, 0xFE)
         self.assertEqual(obj.overall_mask, 0xFFFFFFFF)
-        self.assertEqual(
-            repr(obj),
-            "FloatProperties.standard(32, "
-            + "PlatformProperties(canonical_nan_sign=Sign.Positive, "
-            + "canonical_nan_mantissa_msb=True, "
-            + "canonical_nan_mantissa_second_to_msb=False, "
-            + "canonical_nan_mantissa_rest=False, "
-            + "std_bin_ops_nan_propagation_mode="
-            + "BinaryNaNPropagationMode.AlwaysCanonical, "
-            + "fma_nan_propagation_mode="
-            + "TernaryNaNPropagationMode.AlwaysCanonical, "
-            + "fma_inf_zero_qnan_result="
-            + "FMAInfZeroQNaNResult.CanonicalAndGenerateInvalid, "
-            + "round_to_integral_nan_propagation_mode="
-            + "UnaryNaNPropagationMode.AlwaysCanonical, "
-            + "next_up_or_down_nan_propagation_mode="
-            + "UnaryNaNPropagationMode.AlwaysCanonical, "
-            + "scale_b_nan_propagation_mode="
-            + "UnaryNaNPropagationMode.AlwaysCanonical, "
-            + "sqrt_nan_propagation_mode="
-            + "UnaryNaNPropagationMode.AlwaysCanonical, "
-            + "float_to_float_conversion_nan_propagation_mode="
-            + "FloatToFloatConversionNaNPropagationMode.AlwaysCanonical, "
-            + "rsqrt_nan_propagation_mode="
-            + "UnaryNaNPropagationMode.AlwaysCanonical))")
+        self.assertEqual(repr(obj),
+                         "FloatProperties.standard(32, "
+                         + "PlatformProperties_RISC_V)")
 
 
 class TestPlatformProperties(unittest.TestCase):
     maxDiff = None
+
+    def test_signatures(self):
+        check_signatures(self, ssf.PlatformProperties)
+
+    def test_constructor_signature(self):
+        cls = ssf.PlatformProperties
+        signature = inspect.signature(ssf.PlatformProperties)
+        parameters = list(signature.parameters.values())
+        parameters_set = set()
+        for i in range(len(parameters)):
+            parameter = parameters[i]
+            if i == 0:
+                self.assertEqual(parameter.name, "value")
+                self.assertEqual(parameter.kind,
+                                 inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                self.assertIsNone(parameter.default)
+            else:
+                parameters_set.add(parameter.name)
+                self.assertEqual(parameter.kind,
+                                 inspect.Parameter.KEYWORD_ONLY)
+                self.assertIsNone(parameter.default)
+        members_set = set()
+        for name, member in cls.__dict__.items():
+            if name.startswith("_") or callable(member):
+                continue
+            members_set.add(name)
+        members_set.discard("quiet_nan_format")
+        self.assertEqual(parameters_set, members_set)
 
     def test_smoke_test(self):
         self.assertIsInstance(ssf.PlatformProperties_ARM,
@@ -358,6 +379,9 @@ class TestDynamicFloat(unittest.TestCase):
     maxDiff = None
     properties = ssf.FloatProperties.standard(32,
                                               ssf.PlatformProperties_RISC_V)
+
+    def test_signatures(self):
+        check_signatures(self, ssf.DynamicFloat)
 
     def test_construct(self):
         obj = ssf.DynamicFloat(properties=self.properties)

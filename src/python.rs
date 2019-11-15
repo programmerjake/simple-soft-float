@@ -131,7 +131,7 @@ pub(crate) fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
     UpOrDown::add_to_module(py, m)?;
     TernaryNaNPropagationMode::add_to_module(py, m)?;
     UnaryNaNPropagationMode::add_to_module(py, m)?;
-    PlatformProperties::add_to_module(py, m)?;
+    PyPlatformProperties::add_to_module(py, m)?;
     ExceptionHandlingMode::add_to_module(py, m)?;
     TininessDetectionMode::add_to_module(py, m)?;
     Ok(())
@@ -176,6 +176,13 @@ impl StatusFlags {
     }
 }
 
+#[doc = "FPState(\
+         value = None, \
+         *, \
+         rounding_mode = None, \
+         status_flags = None, \
+         exception_handling_mode = None, \
+         tininess_detection_mode = None)\n--\n\n"]
 #[pyclass(name = FPState, module = "simple_soft_float")]
 struct PyFPState {
     value: FPState,
@@ -194,53 +201,61 @@ impl IntoPy<PyObject> for FPState {
     }
 }
 
-#[pymethods]
-impl PyFPState {
-    #[new]
-    #[args(
-        value = "None",
-        "*",
-        rounding_mode = "None",
-        status_flags = "None",
-        exception_handling_mode = "None",
-        tininess_detection_mode = "None"
-    )]
-    #[allow(clippy::new_ret_no_self)]
-    fn new(
-        obj: &PyRawObject,
-        value: Option<FPState>,
-        rounding_mode: Option<RoundingMode>,
-        status_flags: Option<StatusFlags>,
-        exception_handling_mode: Option<ExceptionHandlingMode>,
-        tininess_detection_mode: Option<TininessDetectionMode>,
-    ) {
-        let mut value = value.unwrap_or_default();
-        value.rounding_mode = rounding_mode.unwrap_or(value.rounding_mode);
-        value.status_flags = status_flags.unwrap_or(value.status_flags);
-        value.exception_handling_mode =
-            exception_handling_mode.unwrap_or(value.exception_handling_mode);
-        value.tininess_detection_mode =
-            tininess_detection_mode.unwrap_or(value.tininess_detection_mode);
-        obj.init(PyFPState { value });
-    }
-    #[getter]
-    fn rounding_mode(&self) -> RoundingMode {
-        self.value.rounding_mode
-    }
-    #[getter]
-    fn status_flags(&self) -> StatusFlags {
-        self.value.status_flags
-    }
-    #[getter]
-    fn exception_handling_mode(&self) -> ExceptionHandlingMode {
-        self.value.exception_handling_mode
-    }
-    #[getter]
-    fn tininess_detection_mode(&self) -> TininessDetectionMode {
-        self.value.tininess_detection_mode
-    }
-    fn merge(&self, other: FPState) -> PyResult<FPState> {
-        Ok(self.value.checked_merge(other)?)
+python_methods! {
+    #[pymethods]
+    impl PyFPState {
+        #[signature]
+        #[new]
+        #[args(
+            value = "None",
+            "*",
+            rounding_mode = "None",
+            status_flags = "None",
+            exception_handling_mode = "None",
+            tininess_detection_mode = "None"
+        )]
+        #[allow(clippy::new_ret_no_self)]
+        fn new(
+            obj: &PyRawObject,
+            value: Option<FPState>,
+            rounding_mode: Option<RoundingMode>,
+            status_flags: Option<StatusFlags>,
+            exception_handling_mode: Option<ExceptionHandlingMode>,
+            tininess_detection_mode: Option<TininessDetectionMode>,
+        ) {
+            let mut value = value.unwrap_or_default();
+            value.rounding_mode = rounding_mode.unwrap_or(value.rounding_mode);
+            value.status_flags = status_flags.unwrap_or(value.status_flags);
+            value.exception_handling_mode =
+                exception_handling_mode.unwrap_or(value.exception_handling_mode);
+            value.tininess_detection_mode =
+                tininess_detection_mode.unwrap_or(value.tininess_detection_mode);
+            obj.init(PyFPState { value });
+        }
+        #[signature]
+        #[getter]
+        fn rounding_mode(&self) -> RoundingMode {
+            self.value.rounding_mode
+        }
+        #[signature]
+        #[getter]
+        fn status_flags(&self) -> StatusFlags {
+            self.value.status_flags
+        }
+        #[signature]
+        #[getter]
+        fn exception_handling_mode(&self) -> ExceptionHandlingMode {
+            self.value.exception_handling_mode
+        }
+        #[signature]
+        #[getter]
+        fn tininess_detection_mode(&self) -> TininessDetectionMode {
+            self.value.tininess_detection_mode
+        }
+        #[signature = "merge(self, other)"]
+        fn merge(&self, other: FPState) -> PyResult<FPState> {
+            Ok(self.value.checked_merge(other)?)
+        }
     }
 }
 
@@ -285,6 +300,7 @@ impl PyObjectProtocol for PyFPState {
     }
 }
 
+#[doc = "DynamicFloat(value = None, *, bits = None, fp_state = None, properties = None)\n--\n\n"]
 #[pyclass(name = DynamicFloat, module = "simple_soft_float")]
 struct PyDynamicFloat {
     value_opt: Option<DynamicFloat>,
@@ -312,356 +328,419 @@ impl IntoPy<PyObject> for DynamicFloat {
     }
 }
 
-#[pymethods]
-impl PyDynamicFloat {
-    #[new]
-    #[args(
-        value = "None",
-        "*",
-        bits = "None",
-        fp_state = "None",
-        properties = "None"
-    )]
-    #[allow(clippy::new_ret_no_self)]
-    fn new(
-        obj: &PyRawObject,
-        value: Option<&DynamicFloat>,
-        bits: Option<BigUint>,
-        fp_state: Option<FPState>,
-        properties: Option<FloatProperties>,
-    ) -> PyResult<()> {
-        let result = || -> PyResult<DynamicFloat> {
-            let fp_state = fp_state.or_else(|| value.map(|value| value.fp_state));
-            let mut value = if let Some(properties) = properties {
-                if let Some(bits) = bits {
-                    DynamicFloat::from_bits(bits, properties)
-                        .ok_or_else(|| PyErr::new::<ValueError, _>("bits out of range"))?
+python_methods! {
+    #[pymethods]
+    impl PyDynamicFloat {
+        #[signature]
+        #[new]
+        #[args(
+            value = "None",
+            "*",
+            bits = "None",
+            fp_state = "None",
+            properties = "None"
+        )]
+        #[allow(clippy::new_ret_no_self)]
+        fn new(
+            obj: &PyRawObject,
+            value: Option<&DynamicFloat>,
+            bits: Option<BigUint>,
+            fp_state: Option<FPState>,
+            properties: Option<FloatProperties>,
+        ) -> PyResult<()> {
+            let result = || -> PyResult<DynamicFloat> {
+                let fp_state = fp_state.or_else(|| value.map(|value| value.fp_state));
+                let mut value = if let Some(properties) = properties {
+                    if let Some(bits) = bits {
+                        DynamicFloat::from_bits(bits, properties)
+                            .ok_or_else(|| PyErr::new::<ValueError, _>("bits out of range"))?
+                    } else {
+                        DynamicFloat::new(properties)
+                    }
                 } else {
-                    DynamicFloat::new(properties)
+                    let value = value.ok_or_else(|| {
+                        PyErr::new::<TypeError, _>(
+                            "DynamicFloat constructor must be called with properties and/or value set",
+                        )
+                    })?;
+                    if let Some(bits) = bits {
+                        DynamicFloat::from_bits(bits, value.value.properties())
+                            .ok_or_else(|| PyErr::new::<ValueError, _>("bits out of range"))?
+                    } else {
+                        value.clone()
+                    }
+                };
+                value.fp_state = fp_state.unwrap_or(value.fp_state);
+                Ok(value)
+            }();
+            match result {
+                Ok(value) => {
+                    obj.init(PyDynamicFloat {
+                        value_opt: Some(value),
+                    });
+                    Ok(())
                 }
-            } else {
-                let value = value.ok_or_else(|| {
-                    PyErr::new::<TypeError, _>(
-                        "DynamicFloat constructor must be called with properties and/or value set",
-                    )
-                })?;
-                if let Some(bits) = bits {
-                    DynamicFloat::from_bits(bits, value.value.properties())
-                        .ok_or_else(|| PyErr::new::<ValueError, _>("bits out of range"))?
-                } else {
-                    value.clone()
+                Err(err) => {
+                    // obj must be initialized in all cases
+                    obj.init(PyDynamicFloat { value_opt: None });
+                    Err(err)
                 }
-            };
-            value.fp_state = fp_state.unwrap_or(value.fp_state);
-            Ok(value)
-        }();
-        match result {
-            Ok(value) => {
-                obj.init(PyDynamicFloat {
-                    value_opt: Some(value),
-                });
-                Ok(())
-            }
-            Err(err) => {
-                // obj must be initialized in all cases
-                obj.init(PyDynamicFloat { value_opt: None });
-                Err(err)
             }
         }
-    }
-    #[getter]
-    fn bits(&self) -> BigUint {
-        self.value().bits().clone()
-    }
-    #[getter]
-    fn fp_state(&self) -> FPState {
-        self.value().fp_state
-    }
-    #[getter]
-    fn properties(&self) -> FloatProperties {
-        self.value().properties()
-    }
-    #[getter]
-    fn sign(&self) -> Sign {
-        self.value().sign()
-    }
-    #[getter]
-    fn exponent_field(&self) -> BigUint {
-        self.value().exponent_field()
-    }
-    #[getter]
-    fn mantissa_field(&self) -> BigUint {
-        self.value().mantissa_field()
-    }
-    #[getter]
-    fn mantissa_field_msb(&self) -> bool {
-        self.value().mantissa_field_msb()
-    }
-    #[getter]
-    fn float_class(&self) -> FloatClass {
-        self.value().class()
-    }
-    #[getter]
-    fn is_negative_infinity(&self) -> bool {
-        self.value().is_negative_infinity()
-    }
-    #[getter]
-    fn is_negative_normal(&self) -> bool {
-        self.value().is_negative_normal()
-    }
-    #[getter]
-    fn is_negative_subnormal(&self) -> bool {
-        self.value().is_negative_subnormal()
-    }
-    #[getter]
-    fn is_negative_zero(&self) -> bool {
-        self.value().is_negative_zero()
-    }
-    #[getter]
-    fn is_positive_infinity(&self) -> bool {
-        self.value().is_positive_infinity()
-    }
-    #[getter]
-    fn is_positive_normal(&self) -> bool {
-        self.value().is_positive_normal()
-    }
-    #[getter]
-    fn is_positive_subnormal(&self) -> bool {
-        self.value().is_positive_subnormal()
-    }
-    #[getter]
-    fn is_positive_zero(&self) -> bool {
-        self.value().is_positive_zero()
-    }
-    #[getter]
-    fn is_quiet_nan(&self) -> bool {
-        self.value().is_quiet_nan()
-    }
-    #[getter]
-    fn is_signaling_nan(&self) -> bool {
-        self.value().is_signaling_nan()
-    }
-    #[getter]
-    fn is_infinity(&self) -> bool {
-        self.value().is_infinity()
-    }
-    #[getter]
-    fn is_normal(&self) -> bool {
-        self.value().is_normal()
-    }
-    #[getter]
-    fn is_subnormal(&self) -> bool {
-        self.value().is_subnormal()
-    }
-    #[getter]
-    fn is_zero(&self) -> bool {
-        self.value().is_zero()
-    }
-    #[getter]
-    fn is_nan(&self) -> bool {
-        self.value().is_nan()
-    }
-    #[getter]
-    fn is_finite(&self) -> bool {
-        self.value().is_finite()
-    }
-    #[getter]
-    fn is_subnormal_or_zero(&self) -> bool {
-        self.value().is_subnormal_or_zero()
-    }
-    #[staticmethod]
-    fn positive_zero(properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::positive_zero(properties)
-    }
-    #[staticmethod]
-    fn negative_zero(properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::negative_zero(properties)
-    }
-    #[staticmethod]
-    fn signed_zero(sign: Sign, properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::signed_zero(sign, properties)
-    }
-    #[staticmethod]
-    fn positive_infinity(properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::positive_infinity(properties)
-    }
-    #[staticmethod]
-    fn negative_infinity(properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::negative_infinity(properties)
-    }
-    #[staticmethod]
-    fn signed_infinity(sign: Sign, properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::signed_infinity(sign, properties)
-    }
-    #[staticmethod]
-    fn quiet_nan(properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::quiet_nan(properties)
-    }
-    #[staticmethod]
-    fn signaling_nan(properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::signaling_nan(properties)
-    }
-    fn to_quiet_nan(&self) -> DynamicFloat {
-        self.value().to_quiet_nan()
-    }
-    #[staticmethod]
-    fn signed_max_normal(sign: Sign, properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::signed_max_normal(sign, properties)
-    }
-    #[staticmethod]
-    fn signed_min_subnormal(sign: Sign, properties: FloatProperties) -> DynamicFloat {
-        DynamicFloat::signed_min_subnormal(sign, properties)
-    }
-    // NOTE: from_real_algebraic_number is not implemented on purpose
-    // due to high likelyhood of version mismatch for algebraics module
-    #[args(rounding_mode = "None")]
-    fn add(
-        &self,
-        rhs: &DynamicFloat,
-        rounding_mode: Option<RoundingMode>,
-    ) -> PyResult<DynamicFloat> {
-        let value = self.value();
-        value.properties().check_compatibility(rhs.properties())?;
-        Ok(value.checked_add_with_rounding_mode(rhs, rounding_mode)?)
-    }
-    #[args(rounding_mode = "None")]
-    fn sub(
-        &self,
-        rhs: &DynamicFloat,
-        rounding_mode: Option<RoundingMode>,
-    ) -> PyResult<DynamicFloat> {
-        let value = self.value();
-        value.properties().check_compatibility(rhs.properties())?;
-        Ok(value.checked_sub_with_rounding_mode(rhs, rounding_mode)?)
-    }
-    #[args(rounding_mode = "None")]
-    fn mul(
-        &self,
-        rhs: &DynamicFloat,
-        rounding_mode: Option<RoundingMode>,
-    ) -> PyResult<DynamicFloat> {
-        let value = self.value();
-        value.properties().check_compatibility(rhs.properties())?;
-        Ok(value.checked_mul_with_rounding_mode(rhs, rounding_mode)?)
-    }
-    #[args(rounding_mode = "None")]
-    fn div(
-        &self,
-        rhs: &DynamicFloat,
-        rounding_mode: Option<RoundingMode>,
-    ) -> PyResult<DynamicFloat> {
-        let value = self.value();
-        value.properties().check_compatibility(rhs.properties())?;
-        Ok(value.checked_div_with_rounding_mode(rhs, rounding_mode)?)
-    }
-    #[args(rounding_mode = "None")]
-    fn ieee754_remainder(
-        &self,
-        rhs: &DynamicFloat,
-        rounding_mode: Option<RoundingMode>,
-    ) -> PyResult<DynamicFloat> {
-        let value = self.value();
-        value.properties().check_compatibility(rhs.properties())?;
-        Ok(value.checked_ieee754_remainder(rhs, rounding_mode)?)
-    }
-    #[args(rounding_mode = "None")]
-    fn fused_mul_add(
-        &self,
-        factor: &DynamicFloat,
-        term: &DynamicFloat,
-        rounding_mode: Option<RoundingMode>,
-    ) -> PyResult<DynamicFloat> {
-        let value = self.value();
-        value
-            .properties()
-            .check_compatibility(factor.properties())?;
-        value.properties().check_compatibility(term.properties())?;
-        Ok(value.checked_fused_mul_add(factor, term, rounding_mode)?)
-    }
-    #[args("*", exact = "false", rounding_mode = "None")]
-    fn round_to_integer(
-        &self,
-        exact: bool,
-        rounding_mode: Option<RoundingMode>,
-    ) -> (Option<BigInt>, FPState) {
-        self.value().round_to_integer(exact, rounding_mode)
-    }
-    #[args("*", exact = "false", rounding_mode = "None")]
-    fn round_to_integral(&self, exact: bool, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
-        self.value().round_to_integral(exact, rounding_mode)
-    }
-    fn next_up_or_down(&self, up_or_down: UpOrDown) -> DynamicFloat {
-        self.value().next_up_or_down(up_or_down)
-    }
-    fn next_up(&self) -> DynamicFloat {
-        self.value().next_up()
-    }
-    fn next_down(&self) -> DynamicFloat {
-        self.value().next_down()
-    }
-    fn log_b(&self) -> (Option<BigInt>, FPState) {
-        self.value().log_b()
-    }
-    #[args(rounding_mode = "None")]
-    fn scale_b(&self, scale: BigInt, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
-        self.value().scale_b(scale, rounding_mode)
-    }
-    #[args(rounding_mode = "None")]
-    fn sqrt(&self, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
-        self.value().sqrt(rounding_mode)
-    }
-    fn convert_to_dynamic_float(
-        &self,
-        rounding_mode: Option<RoundingMode>,
-        properties: FloatProperties,
-    ) -> DynamicFloat {
-        self.value()
-            .convert_to_dynamic_float(rounding_mode, properties)
-    }
-    fn abs(&self) -> DynamicFloat {
-        self.value().abs()
-    }
-    fn neg(&self) -> DynamicFloat {
-        -self.value()
-    }
-    fn copy_sign(&self, sign_src: &PyDynamicFloat) -> DynamicFloat {
-        self.value().copy_sign(sign_src.value())
-    }
-    fn compare(&self, rhs: &PyDynamicFloat, quiet: bool) -> PyResult<(Option<i32>, FPState)> {
-        let value = self.value();
-        let rhs = rhs.value();
-        value.properties().check_compatibility(rhs.properties())?;
-        let (ordering, fp_state) = value.checked_compare(rhs, quiet)?;
-        Ok((ordering.map(|ordering| ordering as i32), fp_state))
-    }
-    fn compare_quiet(&self, rhs: &PyDynamicFloat) -> PyResult<(Option<i32>, FPState)> {
-        self.compare(rhs, true)
-    }
-    fn compare_signaling(&self, rhs: &PyDynamicFloat) -> PyResult<(Option<i32>, FPState)> {
-        self.compare(rhs, false)
-    }
-    /// `rounding_mode` only used for this conversion
-    #[staticmethod]
-    #[args(value, properties, "*", rounding_mode = "None", fp_state = "None")]
-    fn from_int(
-        value: BigInt,
-        properties: FloatProperties,
-        rounding_mode: Option<RoundingMode>,
-        fp_state: Option<FPState>,
-    ) -> DynamicFloat {
-        DynamicFloat::from_bigint(value, rounding_mode, fp_state, properties)
-    }
-    #[args(exact = "false", rounding_mode = "None")]
-    fn to_int(
-        &self,
-        exact: bool,
-        rounding_mode: Option<RoundingMode>,
-    ) -> (Option<BigInt>, FPState) {
-        self.value().to_bigint(exact, rounding_mode)
-    }
-    #[args(rounding_mode = "None")]
-    fn rsqrt(&self, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
-        self.value().rsqrt(rounding_mode)
+        #[signature]
+        #[getter]
+        fn bits(&self) -> BigUint {
+            self.value().bits().clone()
+        }
+        #[signature]
+        #[getter]
+        fn fp_state(&self) -> FPState {
+            self.value().fp_state
+        }
+        #[signature]
+        #[getter]
+        fn properties(&self) -> FloatProperties {
+            self.value().properties()
+        }
+        #[signature]
+        #[getter]
+        fn sign(&self) -> Sign {
+            self.value().sign()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_field(&self) -> BigUint {
+            self.value().exponent_field()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field(&self) -> BigUint {
+            self.value().mantissa_field()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field_msb(&self) -> bool {
+            self.value().mantissa_field_msb()
+        }
+        #[signature]
+        #[getter]
+        fn float_class(&self) -> FloatClass {
+            self.value().class()
+        }
+        #[signature]
+        #[getter]
+        fn is_negative_infinity(&self) -> bool {
+            self.value().is_negative_infinity()
+        }
+        #[signature]
+        #[getter]
+        fn is_negative_normal(&self) -> bool {
+            self.value().is_negative_normal()
+        }
+        #[signature]
+        #[getter]
+        fn is_negative_subnormal(&self) -> bool {
+            self.value().is_negative_subnormal()
+        }
+        #[signature]
+        #[getter]
+        fn is_negative_zero(&self) -> bool {
+            self.value().is_negative_zero()
+        }
+        #[signature]
+        #[getter]
+        fn is_positive_infinity(&self) -> bool {
+            self.value().is_positive_infinity()
+        }
+        #[signature]
+        #[getter]
+        fn is_positive_normal(&self) -> bool {
+            self.value().is_positive_normal()
+        }
+        #[signature]
+        #[getter]
+        fn is_positive_subnormal(&self) -> bool {
+            self.value().is_positive_subnormal()
+        }
+        #[signature]
+        #[getter]
+        fn is_positive_zero(&self) -> bool {
+            self.value().is_positive_zero()
+        }
+        #[signature]
+        #[getter]
+        fn is_quiet_nan(&self) -> bool {
+            self.value().is_quiet_nan()
+        }
+        #[signature]
+        #[getter]
+        fn is_signaling_nan(&self) -> bool {
+            self.value().is_signaling_nan()
+        }
+        #[signature]
+        #[getter]
+        fn is_infinity(&self) -> bool {
+            self.value().is_infinity()
+        }
+        #[signature]
+        #[getter]
+        fn is_normal(&self) -> bool {
+            self.value().is_normal()
+        }
+        #[signature]
+        #[getter]
+        fn is_subnormal(&self) -> bool {
+            self.value().is_subnormal()
+        }
+        #[signature]
+        #[getter]
+        fn is_zero(&self) -> bool {
+            self.value().is_zero()
+        }
+        #[signature]
+        #[getter]
+        fn is_nan(&self) -> bool {
+            self.value().is_nan()
+        }
+        #[signature]
+        #[getter]
+        fn is_finite(&self) -> bool {
+            self.value().is_finite()
+        }
+        #[signature]
+        #[getter]
+        fn is_subnormal_or_zero(&self) -> bool {
+            self.value().is_subnormal_or_zero()
+        }
+        #[signature = "positive_zero(properties)"]
+        #[staticmethod]
+        fn positive_zero(properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::positive_zero(properties)
+        }
+        #[signature = "negative_zero(properties)"]
+        #[staticmethod]
+        fn negative_zero(properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::negative_zero(properties)
+        }
+        #[signature = "signed_zero(sign, properties)"]
+        #[staticmethod]
+        fn signed_zero(sign: Sign, properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::signed_zero(sign, properties)
+        }
+        #[signature = "positive_infinity(properties)"]
+        #[staticmethod]
+        fn positive_infinity(properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::positive_infinity(properties)
+        }
+        #[signature = "negative_infinity(properties)"]
+        #[staticmethod]
+        fn negative_infinity(properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::negative_infinity(properties)
+        }
+        #[signature = "signed_infinity(sign, properties)"]
+        #[staticmethod]
+        fn signed_infinity(sign: Sign, properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::signed_infinity(sign, properties)
+        }
+        #[signature = "quiet_nan(properties)"]
+        #[staticmethod]
+        fn quiet_nan(properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::quiet_nan(properties)
+        }
+        #[signature = "signaling_nan(properties)"]
+        #[staticmethod]
+        fn signaling_nan(properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::signaling_nan(properties)
+        }
+        #[signature = "to_quiet_nan($self)"]
+        fn to_quiet_nan(&self) -> DynamicFloat {
+            self.value().to_quiet_nan()
+        }
+        #[signature = "signed_max_normal(sign, properties)"]
+        #[staticmethod]
+        fn signed_max_normal(sign: Sign, properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::signed_max_normal(sign, properties)
+        }
+        #[signature = "signed_min_subnormal(sign, properties)"]
+        #[staticmethod]
+        fn signed_min_subnormal(sign: Sign, properties: FloatProperties) -> DynamicFloat {
+            DynamicFloat::signed_min_subnormal(sign, properties)
+        }
+        // NOTE: from_real_algebraic_number is not implemented on purpose
+        // due to high likelyhood of version mismatch for algebraics module
+        #[signature = "add($self, rhs, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn add(
+            &self,
+            rhs: &DynamicFloat,
+            rounding_mode: Option<RoundingMode>,
+        ) -> PyResult<DynamicFloat> {
+            let value = self.value();
+            value.properties().check_compatibility(rhs.properties())?;
+            Ok(value.checked_add_with_rounding_mode(rhs, rounding_mode)?)
+        }
+        #[signature = "sub($self, rhs, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn sub(
+            &self,
+            rhs: &DynamicFloat,
+            rounding_mode: Option<RoundingMode>,
+        ) -> PyResult<DynamicFloat> {
+            let value = self.value();
+            value.properties().check_compatibility(rhs.properties())?;
+            Ok(value.checked_sub_with_rounding_mode(rhs, rounding_mode)?)
+        }
+        #[signature = "mul($self, rhs, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn mul(
+            &self,
+            rhs: &DynamicFloat,
+            rounding_mode: Option<RoundingMode>,
+        ) -> PyResult<DynamicFloat> {
+            let value = self.value();
+            value.properties().check_compatibility(rhs.properties())?;
+            Ok(value.checked_mul_with_rounding_mode(rhs, rounding_mode)?)
+        }
+        #[signature = "div($self, rhs, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn div(
+            &self,
+            rhs: &DynamicFloat,
+            rounding_mode: Option<RoundingMode>,
+        ) -> PyResult<DynamicFloat> {
+            let value = self.value();
+            value.properties().check_compatibility(rhs.properties())?;
+            Ok(value.checked_div_with_rounding_mode(rhs, rounding_mode)?)
+        }
+        #[signature = "ieee754_remainder($self, rhs, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn ieee754_remainder(
+            &self,
+            rhs: &DynamicFloat,
+            rounding_mode: Option<RoundingMode>,
+        ) -> PyResult<DynamicFloat> {
+            let value = self.value();
+            value.properties().check_compatibility(rhs.properties())?;
+            Ok(value.checked_ieee754_remainder(rhs, rounding_mode)?)
+        }
+        #[signature = "fused_mul_add($self, factor, term, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn fused_mul_add(
+            &self,
+            factor: &DynamicFloat,
+            term: &DynamicFloat,
+            rounding_mode: Option<RoundingMode>,
+        ) -> PyResult<DynamicFloat> {
+            let value = self.value();
+            value
+                .properties()
+                .check_compatibility(factor.properties())?;
+            value.properties().check_compatibility(term.properties())?;
+            Ok(value.checked_fused_mul_add(factor, term, rounding_mode)?)
+        }
+        #[signature = "round_to_integer($self, *, exact = False, rounding_mode = None)"]
+        #[args("*", exact = "false", rounding_mode = "None")]
+        fn round_to_integer(
+            &self,
+            exact: bool,
+            rounding_mode: Option<RoundingMode>,
+        ) -> (Option<BigInt>, FPState) {
+            self.value().round_to_integer(exact, rounding_mode)
+        }
+        #[signature = "round_to_integral($self, *, exact = False, rounding_mode = None)"]
+        #[args("*", exact = "false", rounding_mode = "None")]
+        fn round_to_integral(&self, exact: bool, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+            self.value().round_to_integral(exact, rounding_mode)
+        }
+        #[signature = "next_up_or_down($self, up_or_down)"]
+        fn next_up_or_down(&self, up_or_down: UpOrDown) -> DynamicFloat {
+            self.value().next_up_or_down(up_or_down)
+        }
+        #[signature = "next_up($self)"]
+        fn next_up(&self) -> DynamicFloat {
+            self.value().next_up()
+        }
+        #[signature = "next_down($self)"]
+        fn next_down(&self) -> DynamicFloat {
+            self.value().next_down()
+        }
+        #[signature = "log_b($self)"]
+        fn log_b(&self) -> (Option<BigInt>, FPState) {
+            self.value().log_b()
+        }
+        #[signature = "scale_b($self, scale, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn scale_b(&self, scale: BigInt, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+            self.value().scale_b(scale, rounding_mode)
+        }
+        #[signature = "sqrt($self, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn sqrt(&self, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+            self.value().sqrt(rounding_mode)
+        }
+        #[signature = "convert_to_dynamic_float($self, rounding_mode, properties)"]
+        fn convert_to_dynamic_float(
+            &self,
+            rounding_mode: Option<RoundingMode>,
+            properties: FloatProperties,
+        ) -> DynamicFloat {
+            self.value()
+                .convert_to_dynamic_float(rounding_mode, properties)
+        }
+        #[signature = "abs($self)"]
+        fn abs(&self) -> DynamicFloat {
+            self.value().abs()
+        }
+        #[signature = "neg($self)"]
+        fn neg(&self) -> DynamicFloat {
+            -self.value()
+        }
+        #[signature = "copy_sign($self, sign_src)"]
+        fn copy_sign(&self, sign_src: &PyDynamicFloat) -> DynamicFloat {
+            self.value().copy_sign(sign_src.value())
+        }
+        #[signature = "compare($self, rhs, quiet)"]
+        fn compare(&self, rhs: &PyDynamicFloat, quiet: bool) -> PyResult<(Option<i32>, FPState)> {
+            let value = self.value();
+            let rhs = rhs.value();
+            value.properties().check_compatibility(rhs.properties())?;
+            let (ordering, fp_state) = value.checked_compare(rhs, quiet)?;
+            Ok((ordering.map(|ordering| ordering as i32), fp_state))
+        }
+        #[signature = "compare_quiet($self, rhs)"]
+        fn compare_quiet(&self, rhs: &PyDynamicFloat) -> PyResult<(Option<i32>, FPState)> {
+            self.compare(rhs, true)
+        }
+        #[signature = "compare_signaling($self, rhs)"]
+        fn compare_signaling(&self, rhs: &PyDynamicFloat) -> PyResult<(Option<i32>, FPState)> {
+            self.compare(rhs, false)
+        }
+        #[signature = "from_int(value, properties, *, rounding_mode = None, fp_state = None)"]
+        /// `rounding_mode` only used for this conversion
+        #[staticmethod]
+        #[args(value, properties, "*", rounding_mode = "None", fp_state = "None")]
+        fn from_int(
+            value: BigInt,
+            properties: FloatProperties,
+            rounding_mode: Option<RoundingMode>,
+            fp_state: Option<FPState>,
+        ) -> DynamicFloat {
+            DynamicFloat::from_bigint(value, rounding_mode, fp_state, properties)
+        }
+        #[signature = "to_int($self, exact, rounding_mode = None)"]
+        #[args(exact = "false", rounding_mode = "None")]
+        fn to_int(
+            &self,
+            exact: bool,
+            rounding_mode: Option<RoundingMode>,
+        ) -> (Option<BigInt>, FPState) {
+            self.value().to_bigint(exact, rounding_mode)
+        }
+        #[signature = "rsqrt($self, rounding_mode = None)"]
+        #[args(rounding_mode = "None")]
+        fn rsqrt(&self, rounding_mode: Option<RoundingMode>) -> DynamicFloat {
+            self.value().rsqrt(rounding_mode)
+        }
     }
 }
 
@@ -687,10 +766,45 @@ impl PyNumberProtocol for PyDynamicFloat {
     }
 }
 
+#[doc = "PlatformProperties(\
+         value = None, \
+         *, \
+         canonical_nan_sign = None, \
+         canonical_nan_mantissa_msb = None, \
+         canonical_nan_mantissa_second_to_msb = None, \
+         canonical_nan_mantissa_rest = None, \
+         std_bin_ops_nan_propagation_mode = None, \
+         fma_nan_propagation_mode = None, \
+         fma_inf_zero_qnan_result = None, \
+         round_to_integral_nan_propagation_mode = None, \
+         next_up_or_down_nan_propagation_mode = None, \
+         scale_b_nan_propagation_mode = None, \
+         sqrt_nan_propagation_mode = None, \
+         float_to_float_conversion_nan_propagation_mode = None, \
+         rsqrt_nan_propagation_mode = None)\n--\n\n"]
+#[pyclass(name = PlatformProperties, module = "simple_soft_float")]
+#[derive(Copy, Clone, PartialEq)]
+pub(crate) struct PyPlatformProperties {
+    value: PlatformProperties,
+}
+
+impl FromPyObject<'_> for PlatformProperties {
+    fn extract(object: &PyAny) -> PyResult<PlatformProperties> {
+        let value: &PyPlatformProperties = object.extract()?;
+        Ok(value.value)
+    }
+}
+
+impl IntoPy<PyObject> for PlatformProperties {
+    fn into_py(self, py: Python) -> PyObject {
+        PyPlatformProperties { value: self }.into_py(py)
+    }
+}
+
 macro_rules! impl_platform_properties_new {
     ($($name:ident:$type:ty,)+) => {
         #[pymethods]
-        impl PlatformProperties {
+        impl PyPlatformProperties {
             #[new]
             #[args(
                 value = "None",
@@ -699,18 +813,27 @@ macro_rules! impl_platform_properties_new {
             )]
             fn __new__(
                 obj: &PyRawObject,
-                value: Option<&Self>,
+                value: Option<PlatformProperties>,
                 $($name: Option<$type>,)+
             ) {
-                let mut value = value.copied().unwrap_or_default();
+                let mut value = value.unwrap_or_default();
                 $(value.$name = $name.unwrap_or(value.$name);)+
-                obj.init(value);
+                obj.init(PyPlatformProperties { value });
+            }
+            $(
+                #[getter]
+                fn $name(&self) -> $type {
+                    self.value.$name
+                }
+            )+
+            #[getter]
+            fn quiet_nan_format(&self) -> QuietNaNFormat {
+                self.value.quiet_nan_format()
             }
         }
 
-        #[pyproto]
-        impl PyObjectProtocol for PlatformProperties {
-            fn __repr__(&self) -> PyResult<String> {
+        impl PlatformProperties {
+            pub(crate) fn fallback_to_python_repr(&self) -> Cow<str> {
                 #![allow(unused_assignments)]
                 #![allow(clippy::useless_let_if_seq)]
                 let mut retval = String::new();
@@ -725,17 +848,7 @@ macro_rules! impl_platform_properties_new {
                     write!(retval, concat!(stringify!($name), "={}"), self.$name.to_python_repr()).unwrap();
                 )+
                 write!(retval, ")").unwrap();
-                Ok(retval)
-            }
-            fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
-                if let Ok(rhs) = <&Self>::extract(other) {
-                    match op {
-                        CompareOp::Eq => return Ok((self == rhs).into_py(other.py())),
-                        CompareOp::Ne => return Ok((self != rhs).into_py(other.py())),
-                        CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {}
-                    };
-                }
-                Ok(other.py().NotImplemented())
+                Cow::Owned(retval)
             }
         }
     };
@@ -757,64 +870,24 @@ impl_platform_properties_new!(
     rsqrt_nan_propagation_mode: UnaryNaNPropagationMode,
 );
 
-#[pymethods]
-impl PlatformProperties {
-    #[getter(canonical_nan_sign)]
-    fn canonical_nan_sign(&self) -> Sign {
-        self.canonical_nan_sign
+#[pyproto]
+impl PyObjectProtocol for PyPlatformProperties {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(self.value.to_python_repr().into_owned())
     }
-    #[getter(canonical_nan_mantissa_msb)]
-    fn canonical_nan_mantissa_msb(&self) -> bool {
-        self.canonical_nan_mantissa_msb
-    }
-    #[getter(canonical_nan_mantissa_second_to_msb)]
-    fn canonical_nan_mantissa_second_to_msb(&self) -> bool {
-        self.canonical_nan_mantissa_second_to_msb
-    }
-    #[getter(canonical_nan_mantissa_rest)]
-    fn canonical_nan_mantissa_rest(&self) -> bool {
-        self.canonical_nan_mantissa_rest
-    }
-    #[getter(std_bin_ops_nan_propagation_mode)]
-    fn std_bin_ops_nan_propagation_mode(&self) -> BinaryNaNPropagationMode {
-        self.std_bin_ops_nan_propagation_mode
-    }
-    #[getter(fma_nan_propagation_mode)]
-    fn fma_nan_propagation_mode(&self) -> TernaryNaNPropagationMode {
-        self.fma_nan_propagation_mode
-    }
-    #[getter(fma_inf_zero_qnan_result)]
-    fn fma_inf_zero_qnan_result(&self) -> FMAInfZeroQNaNResult {
-        self.fma_inf_zero_qnan_result
-    }
-    #[getter(round_to_integral_nan_propagation_mode)]
-    fn round_to_integral_nan_propagation_mode(&self) -> UnaryNaNPropagationMode {
-        self.round_to_integral_nan_propagation_mode
-    }
-    #[getter(next_up_or_down_nan_propagation_mode)]
-    fn next_up_or_down_nan_propagation_mode(&self) -> UnaryNaNPropagationMode {
-        self.next_up_or_down_nan_propagation_mode
-    }
-    #[getter(scale_b_nan_propagation_mode)]
-    fn scale_b_nan_propagation_mode(&self) -> UnaryNaNPropagationMode {
-        self.scale_b_nan_propagation_mode
-    }
-    #[getter(sqrt_nan_propagation_mode)]
-    fn sqrt_nan_propagation_mode(&self) -> UnaryNaNPropagationMode {
-        self.sqrt_nan_propagation_mode
-    }
-    #[getter(float_to_float_conversion_nan_propagation_mode)]
-    fn float_to_float_conversion_nan_propagation_mode(
-        &self,
-    ) -> FloatToFloatConversionNaNPropagationMode {
-        self.float_to_float_conversion_nan_propagation_mode
-    }
-    #[getter(rsqrt_nan_propagation_mode)]
-    fn rsqrt_nan_propagation_mode(&self) -> UnaryNaNPropagationMode {
-        self.rsqrt_nan_propagation_mode
+    fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
+        if let Ok(rhs) = <&Self>::extract(other) {
+            match op {
+                CompareOp::Eq => return Ok((self == rhs).into_py(other.py())),
+                CompareOp::Ne => return Ok((self != rhs).into_py(other.py())),
+                CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {}
+            };
+        }
+        Ok(other.py().NotImplemented())
     }
 }
 
+#[doc = "FloatProperties(exponent_width, mantissa_width, has_implicit_leading_bit, has_sign_bit, platform_properties)\n--\n\n"]
 #[pyclass(name = FloatProperties, module = "simple_soft_float")]
 #[derive(Copy, Clone)]
 struct PyFloatProperties {
@@ -834,138 +907,167 @@ impl IntoPy<PyObject> for FloatProperties {
     }
 }
 
-#[pymethods]
-impl PyFloatProperties {
-    #[new]
-    fn __new__(
-        obj: &PyRawObject,
-        exponent_width: usize,
-        mantissa_width: usize,
-        has_implicit_leading_bit: bool,
-        has_sign_bit: bool,
-        platform_properties: &PlatformProperties,
-    ) {
-        obj.init(PyFloatProperties {
-            value: FloatProperties::new_with_extended_flags(
-                exponent_width,
-                mantissa_width,
-                has_implicit_leading_bit,
-                has_sign_bit,
-                *platform_properties,
-            ),
-        });
-    }
-    #[staticmethod]
-    #[args(width, "*", platform_properties = "None")]
-    fn standard(
-        width: usize,
-        platform_properties: Option<&PlatformProperties>,
-    ) -> PyResult<FloatProperties> {
-        FloatProperties::standard_with_platform_properties(
-            width,
-            platform_properties.copied().unwrap_or_default(),
-        )
-        .ok_or_else(|| PyErr::new::<ValueError, _>("not a valid standard float width"))
-    }
-    #[getter]
-    fn is_standard(&self) -> bool {
-        self.value.is_standard()
-    }
-    #[getter]
-    fn exponent_width(&self) -> usize {
-        self.value.exponent_width()
-    }
-    #[getter]
-    fn mantissa_width(&self) -> usize {
-        self.value.mantissa_width()
-    }
-    #[getter]
-    fn has_implicit_leading_bit(&self) -> bool {
-        self.value.has_implicit_leading_bit()
-    }
-    #[getter]
-    fn has_sign_bit(&self) -> bool {
-        self.value.has_sign_bit()
-    }
-    #[getter]
-    fn platform_properties(&self) -> PlatformProperties {
-        self.value.platform_properties()
-    }
-    #[getter]
-    fn quiet_nan_format(&self) -> QuietNaNFormat {
-        self.value.quiet_nan_format()
-    }
-    #[getter]
-    fn width(&self) -> usize {
-        self.value.width()
-    }
-    #[getter]
-    fn fraction_width(&self) -> usize {
-        self.value.fraction_width()
-    }
-    #[getter]
-    fn sign_field_shift(&self) -> usize {
-        self.value.sign_field_shift()
-    }
-    #[getter]
-    fn sign_field_mask(&self) -> BigUint {
-        self.value.sign_field_mask()
-    }
-    #[getter]
-    fn exponent_field_shift(&self) -> usize {
-        self.value.exponent_field_shift()
-    }
-    #[getter]
-    fn exponent_field_mask(&self) -> BigUint {
-        self.value.exponent_field_mask()
-    }
-    #[getter]
-    fn mantissa_field_shift(&self) -> usize {
-        self.value.mantissa_field_shift()
-    }
-    #[getter]
-    fn mantissa_field_mask(&self) -> BigUint {
-        self.value.mantissa_field_mask()
-    }
-    #[getter]
-    fn mantissa_field_max(&self) -> BigUint {
-        self.value.mantissa_field_max()
-    }
-    #[getter]
-    fn mantissa_field_normal_min(&self) -> BigUint {
-        self.value.mantissa_field_normal_min()
-    }
-    #[getter]
-    fn mantissa_field_msb_shift(&self) -> usize {
-        self.value.mantissa_field_msb_shift()
-    }
-    #[getter]
-    fn mantissa_field_msb_mask(&self) -> BigUint {
-        self.value.mantissa_field_msb_mask()
-    }
-    #[getter]
-    fn exponent_bias(&self) -> BigUint {
-        self.value.exponent_bias()
-    }
-    #[getter]
-    fn exponent_inf_nan(&self) -> BigUint {
-        self.value.exponent_inf_nan()
-    }
-    #[getter]
-    fn exponent_zero_subnormal(&self) -> BigUint {
-        self.value.exponent_zero_subnormal()
-    }
-    #[getter]
-    fn exponent_min_normal(&self) -> BigUint {
-        self.value.exponent_min_normal()
-    }
-    #[getter]
-    fn exponent_max_normal(&self) -> BigUint {
-        self.value.exponent_max_normal()
-    }
-    #[getter]
-    fn overall_mask(&self) -> BigUint {
-        self.value.overall_mask()
+python_methods! {
+    #[pymethods]
+    impl PyFloatProperties {
+        #[signature]
+        #[new]
+        fn __new__(
+            obj: &PyRawObject,
+            exponent_width: usize,
+            mantissa_width: usize,
+            has_implicit_leading_bit: bool,
+            has_sign_bit: bool,
+            platform_properties: PlatformProperties,
+        ) {
+            obj.init(PyFloatProperties {
+                value: FloatProperties::new_with_extended_flags(
+                    exponent_width,
+                    mantissa_width,
+                    has_implicit_leading_bit,
+                    has_sign_bit,
+                    platform_properties,
+                ),
+            });
+        }
+        #[signature = "standard(width, *, platform_properties = None)"]
+        #[staticmethod]
+        #[args(width, "*", platform_properties = "None")]
+        fn standard(
+            width: usize,
+            platform_properties: Option<PlatformProperties>,
+        ) -> PyResult<FloatProperties> {
+            FloatProperties::standard_with_platform_properties(
+                width,
+                platform_properties.unwrap_or_default(),
+            )
+            .ok_or_else(|| PyErr::new::<ValueError, _>("not a valid standard float width"))
+        }
+        #[signature]
+        #[getter]
+        fn is_standard(&self) -> bool {
+            self.value.is_standard()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_width(&self) -> usize {
+            self.value.exponent_width()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_width(&self) -> usize {
+            self.value.mantissa_width()
+        }
+        #[signature]
+        #[getter]
+        fn has_implicit_leading_bit(&self) -> bool {
+            self.value.has_implicit_leading_bit()
+        }
+        #[signature]
+        #[getter]
+        fn has_sign_bit(&self) -> bool {
+            self.value.has_sign_bit()
+        }
+        #[signature]
+        #[getter]
+        fn platform_properties(&self) -> PlatformProperties {
+            self.value.platform_properties()
+        }
+        #[signature]
+        #[getter]
+        fn quiet_nan_format(&self) -> QuietNaNFormat {
+            self.value.quiet_nan_format()
+        }
+        #[signature]
+        #[getter]
+        fn width(&self) -> usize {
+            self.value.width()
+        }
+        #[signature]
+        #[getter]
+        fn fraction_width(&self) -> usize {
+            self.value.fraction_width()
+        }
+        #[signature]
+        #[getter]
+        fn sign_field_shift(&self) -> usize {
+            self.value.sign_field_shift()
+        }
+        #[signature]
+        #[getter]
+        fn sign_field_mask(&self) -> BigUint {
+            self.value.sign_field_mask()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_field_shift(&self) -> usize {
+            self.value.exponent_field_shift()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_field_mask(&self) -> BigUint {
+            self.value.exponent_field_mask()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field_shift(&self) -> usize {
+            self.value.mantissa_field_shift()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field_mask(&self) -> BigUint {
+            self.value.mantissa_field_mask()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field_max(&self) -> BigUint {
+            self.value.mantissa_field_max()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field_normal_min(&self) -> BigUint {
+            self.value.mantissa_field_normal_min()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field_msb_shift(&self) -> usize {
+            self.value.mantissa_field_msb_shift()
+        }
+        #[signature]
+        #[getter]
+        fn mantissa_field_msb_mask(&self) -> BigUint {
+            self.value.mantissa_field_msb_mask()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_bias(&self) -> BigUint {
+            self.value.exponent_bias()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_inf_nan(&self) -> BigUint {
+            self.value.exponent_inf_nan()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_zero_subnormal(&self) -> BigUint {
+            self.value.exponent_zero_subnormal()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_min_normal(&self) -> BigUint {
+            self.value.exponent_min_normal()
+        }
+        #[signature]
+        #[getter]
+        fn exponent_max_normal(&self) -> BigUint {
+            self.value.exponent_max_normal()
+        }
+        #[signature]
+        #[getter]
+        fn overall_mask(&self) -> BigUint {
+            self.value.overall_mask()
+        }
     }
 }
 
@@ -986,7 +1088,7 @@ impl PyObjectProtocol for PyFloatProperties {
             Ok(format!(
                 "FloatProperties.standard({}, {})",
                 self.value.width(),
-                self.value.platform_properties().__repr__()?
+                self.value.platform_properties().to_python_repr()
             ))
         } else {
             Ok(format!(
