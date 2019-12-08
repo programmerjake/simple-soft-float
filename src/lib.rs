@@ -59,6 +59,7 @@ mod test_cases;
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_sign_enum)]
+    /// sign of floating-point number
     pub enum Sign {
         Positive = 0,
         Negative = 1,
@@ -91,6 +92,7 @@ impl MulAssign for Sign {
     }
 }
 
+/// type of underlying bits used to implement Float
 pub trait FloatBitsType:
     Unsigned
     + Integer
@@ -124,6 +126,8 @@ pub trait FloatBitsType:
     + Into<BigInt>
     + From<u8>
 {
+    /// convert `v` to `Self`, returning `Some` if the value fits,
+    /// otherwise returning `None`.
     fn from_bigint(v: &BigInt) -> Option<Self>;
 }
 
@@ -146,6 +150,7 @@ impl_float_bits_type!(u128, to_u128);
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_rounding_mode_enum)]
+    /// floating-point rounding mode
     pub enum RoundingMode {
         TiesToEven = 0,
         TowardZero = 1,

@@ -237,7 +237,6 @@ macro_rules! python_methods {
         #[pymethods $($pymethods_args:tt)*]
         impl $type:ident {
             $(
-                #[signature $(= $signature:literal)?]
                 $(#[$($fn_meta:tt)+])*
                 $fn_vis:vis fn $fn_name:ident($($fn_args:tt)*) $(-> $fn_ret_type:ty)* {
                     $($fn_body:tt)*
@@ -248,10 +247,6 @@ macro_rules! python_methods {
         #[pymethods $($pymethods_args)*]
         impl $type {
             $(
-                $(
-                    #[doc = $signature]
-                    #[doc = "--\n\n"]
-                )*
                 $(#[$($fn_meta)+])*
                 $fn_vis fn $fn_name($($fn_args)*) $(-> $fn_ret_type)* {
                     $($fn_body)*
@@ -271,7 +266,7 @@ macro_rules! filter_python_method_meta {
     ([#[getter $($tt:tt)*] $(#[$($rest:tt)+])*] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
         filter_python_method_meta!([$(#[$($rest)+])*] [$(#[$good_meta])*] {$($body)*});
     };
-    ([#[signature $(= $signature:literal)?] $(#[$($rest:tt)+])*] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
+    ([#[text_signature $($tt:tt)*] $(#[$($rest:tt)+])*] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
         filter_python_method_meta!([$(#[$($rest)+])*] [$(#[$good_meta])*] {$($body)*});
     };
     ([#[new] $(#[$($rest:tt)+])*] [$(#[$good_meta:meta])*] {$($body:tt)*}) => {
