@@ -8,6 +8,7 @@ edition = "2018"
 license = "LGPL-2.1-or-later"
 description = "soft-float library that intends to be a straightforward reference implementation of IEEE 754"
 readme = "README.md"
+repository = "https://salsa.debian.org/Kazan-team/simple-soft-float"
 
 [lib]
 name = "simple_soft_float"

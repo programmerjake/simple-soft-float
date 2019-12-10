@@ -61,7 +61,9 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_sign_enum)]
     /// sign of floating-point number
     pub enum Sign {
+        /// + sign
         Positive = 0,
+        /// - sign
         Negative = 1,
     }
 }
@@ -167,6 +169,7 @@ impl Default for RoundingMode {
 }
 
 bitflags! {
+    /// IEEE 754 status flags
     pub struct StatusFlags: u32 {
         const INVALID_OPERATION = 0b00001;
         const DIVISION_BY_ZERO = 0b00010;
@@ -184,6 +187,21 @@ impl Default for StatusFlags {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_exception_handling_mode_enum)]
+    /// Select if the underflow exception should be signaled when the result is exact.
+    ///
+    /// In IEEE 754, when exceptions are set to use the default handlers
+    /// (they are ignored -- the default for most programming languages), then
+    /// underflow exceptions are only signalled when the result is not exact.
+    ///
+    /// When exceptions are instead set to trap, then underflow exceptions are
+    /// signalled even when the result is exact, to allow the exception handler
+    /// to emulate flush-to-zero FP semantics.
+    ///
+    /// Since simple-soft-float doesn't support trapping exceptions, to simulate
+    /// trapping exceptions, use `DefaultSignalExactUnderflow` as the exception
+    /// handling mode and check `status_flags` after every operation.
+    ///
+    /// Otherwise, use the default value of `DefaultIgnoreExactUnderflow`.
     pub enum ExceptionHandlingMode {
         DefaultIgnoreExactUnderflow,
         DefaultSignalExactUnderflow,
@@ -198,6 +216,7 @@ impl Default for ExceptionHandlingMode {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_tininess_detection_mode_enum)]
+    /// IEEE 754 tininess detection mode
     pub enum TininessDetectionMode {
         AfterRounding,
         BeforeRounding,
@@ -212,6 +231,7 @@ impl Default for TininessDetectionMode {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_binary_nan_propagation_mode_enum)]
+    /// Select how NaN payloads should be propagated
     pub enum BinaryNaNPropagationMode {
         AlwaysCanonical,
         FirstSecond,
@@ -223,6 +243,7 @@ python_enum! {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_unary_nan_propagation_mode_enum)]
+    /// Select how NaN payloads should be propagated
     pub enum UnaryNaNPropagationMode {
         AlwaysCanonical,
         First,
@@ -377,6 +398,7 @@ impl Default for TernaryNaNPropagationResults {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_ternary_nan_propagation_mode_enum)]
+    /// Select how NaN payloads should be propagated
     pub enum TernaryNaNPropagationMode {
         AlwaysCanonical,
         FirstSecondThird,
@@ -586,6 +608,7 @@ impl TernaryNaNPropagationMode {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_fma_inf_zero_qnan_result_enum)]
+    /// select the result of fused `Infinity * 0.0 + QNaN` and `0.0 * Infinity + QNaN`
     pub enum FMAInfZeroQNaNResult {
         FollowNaNPropagationMode,
         CanonicalAndGenerateInvalid,
@@ -601,6 +624,7 @@ impl Default for FMAInfZeroQNaNResult {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_float_to_float_conversion_nan_propagation_mode_enum)]
+    /// select how NaN payloads are propagated in float -> float conversions
     pub enum FloatToFloatConversionNaNPropagationMode {
         AlwaysCanonical,
         RetainMostSignificantBits,
@@ -636,6 +660,7 @@ impl From<FPStateMergeFailed> for PyErr {
 }
 
 impl FPState {
+    /// combine two `FPState` values into one, assigning the result to `self`
     pub fn checked_merge_assign(&mut self, rhs: Self) -> Result<(), FPStateMergeFailed> {
         let status_flags = self.status_flags | rhs.status_flags;
         let same = Self {
@@ -652,13 +677,16 @@ impl FPState {
             Err(FPStateMergeFailed)
         }
     }
+    /// combine two `FPState` values into one, assigning the result to `self`
     pub fn merge_assign(&mut self, rhs: Self) {
         self.checked_merge_assign(rhs).unwrap();
     }
+    /// combine two `FPState` values into one, returning the result
     pub fn checked_merge(mut self, rhs: Self) -> Result<Self, FPStateMergeFailed> {
         self.checked_merge_assign(rhs)?;
         Ok(self)
     }
+    /// combine two `FPState` values into one, returning the result
     pub fn merge(mut self, rhs: Self) -> Self {
         self.merge_assign(rhs);
         self
@@ -667,6 +695,7 @@ impl FPState {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_float_class_enum)]
+    /// float classification
     pub enum FloatClass {
         NegativeInfinity,
         NegativeNormal,
@@ -816,6 +845,12 @@ impl Neg for FloatClass {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_quiet_nan_format_enum)]
+    /// the format for quiet NaN values
+    ///
+    /// IEEE 754 states that implementations *should* use the MSB of the
+    /// mantissa being set to indicate a quiet NaN, however MIPS before
+    /// the 2008 revision and PA-RISC use the MSB of the mantissa being clear
+    /// to indicate a quiet NaN.
     pub enum QuietNaNFormat {
         /// MSB of mantissa set to indicate quiet NaN
         Standard,
@@ -1611,6 +1646,7 @@ impl RoundedMantissa {
 
 python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_up_or_down_enum)]
+    /// select Up or Down
     pub enum UpOrDown {
         Up,
         Down,

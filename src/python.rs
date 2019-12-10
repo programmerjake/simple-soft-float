@@ -155,12 +155,19 @@ impl StatusFlags {
                     writeln!(src, "def f(status_flags_repr):")?;
                     writeln!(src, "    import enum")?;
                     writeln!(src, "    class {}(enum.Flag):", StatusFlags::NAME)?;
+                    writeln!(src, "        \"\"\"IEEE 754 status flags\"\"\"")?;
                     for &(name, value) in StatusFlags::MEMBERS {
                         writeln!(src, "        {} = {}", name, value.bits())?;
                     }
                     writeln!(src, "        __module__ = \"simple_soft_float\"")?;
+                    writeln!(src, "        __qualname__ = \"{}\"", StatusFlags::NAME)?;
                     writeln!(src, "        def __repr__(self):")?;
                     writeln!(src, "            return status_flags_repr(self)")?;
+                    writeln!(
+                        src,
+                        "        __repr__.__qualname__ = \"{}.__repr__\"",
+                        StatusFlags::NAME
+                    )?;
                     writeln!(src, "    return {}", StatusFlags::NAME)?;
                     writeln!(src, "{} = f(status_flags_repr)", StatusFlags::NAME)?;
                     Ok(src)

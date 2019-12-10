@@ -19,6 +19,13 @@ use pyo3::PyNativeType;
 use std::fmt::{self, Write as _};
 
 #[cfg(feature = "python")]
+pub(crate) struct PythonEnumMember<T: PythonEnum> {
+    pub(crate) name: &'static str,
+    pub(crate) value: T,
+    pub(crate) docs: Option<&'static str>,
+}
+
+#[cfg(feature = "python")]
 pub(crate) trait PythonEnum:
     Copy
     + 'static
@@ -29,8 +36,9 @@ pub(crate) trait PythonEnum:
     + crate::python::ToPythonRepr
 {
     const NAME: &'static str;
+    const DOCS: Option<&'static str>;
     const MODULE_NAME: &'static str;
-    const MEMBERS: &'static [(&'static str, Self)];
+    const MEMBERS: &'static [PythonEnumMember<Self>];
     type Repr: Copy + 'static + fmt::Display + for<'source> FromPyObject<'source> + IntoPy<PyObject>;
     fn to_repr(self) -> Self::Repr;
     fn from_repr(value: Self::Repr) -> Option<Self>;
@@ -44,8 +52,14 @@ pub(crate) trait PythonEnum:
                 let get_class_src = || -> Result<String, fmt::Error> {
                     let mut retval = String::new();
                     writeln!(retval, "class {}(enum.Enum):", Self::NAME)?;
-                    for &(name, value) in Self::MEMBERS {
+                    if let Some(docs) = Self::DOCS {
+                        writeln!(retval, "    {:?}", docs)?;
+                    }
+                    for &PythonEnumMember { name, value, docs } in Self::MEMBERS {
                         writeln!(retval, "    {} = {}", name, value.to_repr())?;
+                        if let Some(docs) = docs {
+                            writeln!(retval, "    {:?}", docs)?;
+                        }
                     }
                     writeln!(retval, "{}.__module__ = module_name", Self::NAME)?;
                     Ok(retval)
@@ -87,7 +101,7 @@ pub(crate) trait PythonEnum:
                 Self::NAME,
                 Self::MODULE_NAME
             );
-            for &(_, value) in Self::MEMBERS {
+            for &PythonEnumMember { value, .. } in Self::MEMBERS {
                 let object: PyObject = value.into_py(py);
                 assert_eq!(value, object.extract::<Self>(py)?);
             }
@@ -129,19 +143,39 @@ pub(crate) fn python_enum_extract_impl<T: PythonEnum>(object: &PyAny) -> PyResul
 }
 
 #[cfg(feature = "python")]
+macro_rules! docs_to_string {
+    (#[doc = $doc_first:literal] $(#[doc = $doc_rest:literal])*) => {
+        Some(concat!($doc_first $(, "\n", $doc_rest)*))
+    };
+    () => {
+        None
+    };
+}
+
+#[cfg(feature = "python")]
 macro_rules! python_enum_impl {
     (
         #[pyenum(module = $module:ident, repr = $repr_type:ident, test_fn = $test_fn:ident)]
-        $(#[$meta:meta])*
+        $(#[doc = $enum_doc:literal])*
         $vis:vis enum $enum_name:ident {
-            $($value_name:ident $(= $value_init:expr)*,)+
+            $(
+                $(#[doc = $value_doc:literal])*
+                $value_name:ident $(= $value_init:expr)*,
+            )+
         }
     ) => {
         impl $crate::python_macros::PythonEnum for $enum_name {
             const NAME: &'static str = stringify!($enum_name);
+            const DOCS: Option<&'static str> = docs_to_string!($(#[doc = $enum_doc])*);
             const MODULE_NAME: &'static str = stringify!($module);
-            const MEMBERS: &'static [(&'static str, Self)] = &[
-                $((stringify!($value_name), Self::$value_name),)+
+            const MEMBERS: &'static [$crate::python_macros::PythonEnumMember<Self>] = &[
+                $(
+                    $crate::python_macros::PythonEnumMember {
+                        name: stringify!($value_name),
+                        value: Self::$value_name,
+                        docs: docs_to_string!($(#[doc = $value_doc])*),
+                    },
+                )+
             ];
             type Repr = $repr_type;
             fn to_repr(self) -> Self::Repr {
@@ -203,29 +237,32 @@ macro_rules! python_enum_impl {
 macro_rules! python_enum {
     (
         #[pyenum(module = $module:ident, repr = $repr_type:ident, test_fn = $test_fn:ident)]
-        $(#[$meta:meta])*
+        $(#[doc = $enum_doc:literal])*
         $vis:vis enum $enum_name:ident {
             $(
-                $(#[doc $($value_doc:tt)*])*
+                $(#[doc = $value_doc:literal])*
                 $value_name:ident $(= $value_init:expr)*,
             )+
         }
     ) => {
-        $(#[$meta])*
+        $(#[doc = $enum_doc])*
         #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
         #[repr($repr_type)]
         $vis enum $enum_name {
             $(
-                $(#[doc $($value_doc)*])*
+                $(#[doc = $value_doc])*
                 $value_name $(= $value_init)*,
             )+
         }
 
         python_enum_impl! {
             #[pyenum(module = $module, repr = $repr_type, test_fn = $test_fn)]
-            $(#[$meta])*
+            $(#[doc = $enum_doc])*
             $vis enum $enum_name {
-                $($value_name $(= $value_init)*,)+
+                $(
+                    $(#[doc = $value_doc])*
+                    $value_name $(= $value_init)*,
+                )+
             }
         }
     };
