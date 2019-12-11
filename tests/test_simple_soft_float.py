@@ -34,8 +34,8 @@ class TestExceptionHandlingMode(unittest.TestCase):
     def test_enumerants(self):
         cls = ssf.ExceptionHandlingMode
         self.assertEqual(set(cls),
-                         {cls.DefaultIgnoreExactUnderflow,
-                          cls.DefaultSignalExactUnderflow})
+                         {cls.IgnoreExactUnderflow,
+                          cls.SignalExactUnderflow})
 
 
 class TestFMAInfZeroQNaNResult(unittest.TestCase):
@@ -171,7 +171,7 @@ class TestFPState(unittest.TestCase):
         rounding_mode = ssf.RoundingMode.TiesToEven
         status_flags = ssf.StatusFlags(0)
         exception_handling_mode = ssf.ExceptionHandlingMode \
-            .DefaultIgnoreExactUnderflow
+            .IgnoreExactUnderflow
         tininess_detection_mode = ssf.TininessDetectionMode.AfterRounding
         obj = ssf.FPState(rounding_mode=rounding_mode,
                           status_flags=status_flags,
@@ -187,7 +187,7 @@ class TestFPState(unittest.TestCase):
             "PlatformProperties(rounding_mode=RoundingMode.TiesToEven, "
             + "status_flags=StatusFlags(0), "
             + "exception_handling_mode="
-            + "ExceptionHandlingMode.DefaultIgnoreExactUnderflow, "
+            + "ExceptionHandlingMode.IgnoreExactUnderflow, "
             + "tininess_detection_mode=TininessDetectionMode.AfterRounding)")
 
 

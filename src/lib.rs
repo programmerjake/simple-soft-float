@@ -198,19 +198,21 @@ python_enum! {
     /// to emulate flush-to-zero FP semantics.
     ///
     /// Since simple-soft-float doesn't support trapping exceptions, to simulate
-    /// trapping exceptions, use `DefaultSignalExactUnderflow` as the exception
+    /// trapping exceptions, use `SignalExactUnderflow` as the exception
     /// handling mode and check `status_flags` after every operation.
     ///
-    /// Otherwise, use the default value of `DefaultIgnoreExactUnderflow`.
+    /// Otherwise, use the default value of `IgnoreExactUnderflow`.
     pub enum ExceptionHandlingMode {
-        DefaultIgnoreExactUnderflow,
-        DefaultSignalExactUnderflow,
+        /// Use the default behavior of ignoring exact underflow.
+        IgnoreExactUnderflow,
+        /// Signal the `UNDERFLOW` exception even if the results are exact.
+        SignalExactUnderflow,
     }
 }
 
 impl Default for ExceptionHandlingMode {
     fn default() -> ExceptionHandlingMode {
-        ExceptionHandlingMode::DefaultIgnoreExactUnderflow
+        ExceptionHandlingMode::IgnoreExactUnderflow
     }
 }
 
@@ -2222,8 +2224,8 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             &max_mantissa,
         );
         let check_for_underflow = match fp_state.exception_handling_mode {
-            ExceptionHandlingMode::DefaultIgnoreExactUnderflow => inexact,
-            ExceptionHandlingMode::DefaultSignalExactUnderflow => true,
+            ExceptionHandlingMode::IgnoreExactUnderflow => inexact,
+            ExceptionHandlingMode::SignalExactUnderflow => true,
         };
         if exponent < exponent_min && check_for_underflow {
             let tiny = match fp_state.tininess_detection_mode {

@@ -251,8 +251,8 @@ impl_test_case_argument_for_enum! {
 
 impl_test_case_argument_for_enum! {
     enum ExceptionHandlingMode {
-        DefaultIgnoreExactUnderflow,
-        DefaultSignalExactUnderflow,
+        IgnoreExactUnderflow,
+        SignalExactUnderflow,
     }
 }
 
@@ -551,7 +551,7 @@ test_case! {
                 #[output] result: F16,
                 #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -572,7 +572,7 @@ test_case! {
                 #[output] result: F16,
                 #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -593,7 +593,7 @@ test_case! {
                 #[output] result: F16,
                 #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -614,7 +614,7 @@ test_case! {
                 #[output] result: F16,
                 #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -635,7 +635,7 @@ test_case! {
                 #[output] result: F16,
                 #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -656,7 +656,7 @@ fn mul_add_test_case(
     result: &mut F16,
     status_flags: &mut StatusFlags,
 ) {
-    let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+    let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
     let mut fp_state = FPState {
         rounding_mode,
         exception_handling_mode,
@@ -785,7 +785,7 @@ test_case! {
                               #[output] result: F16,
                               #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -805,7 +805,7 @@ test_case! {
                               #[output] result: F16,
                               #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -844,7 +844,7 @@ test_case! {
                     #[output] result: F16,
                     #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -864,7 +864,7 @@ test_case! {
                  #[output] result: F16,
                  #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -884,7 +884,7 @@ test_case! {
                        #[output] result: F32,
                        #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -904,7 +904,7 @@ test_case! {
                        #[output] result: F16,
                        #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,
@@ -1005,7 +1005,7 @@ test_case! {
                  #[output] result: F16,
                  #[output] status_flags: StatusFlags,
     ) {
-        let exception_handling_mode = ExceptionHandlingMode::DefaultIgnoreExactUnderflow;
+        let exception_handling_mode = ExceptionHandlingMode::IgnoreExactUnderflow;
         let mut fp_state = FPState {
             rounding_mode,
             exception_handling_mode,

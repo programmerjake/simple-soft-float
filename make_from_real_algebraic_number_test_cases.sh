@@ -74,7 +74,7 @@ function write_test_cases() {
         local flag_overflow="${output[6]}"
         local flag_infinite="${output[7]}"
         local flag_invalid="${output[8]}"
-        if [[ "$exception_handling_mode" != "DefaultIgnoreExactUnderflow" ]] && ((mantissa != 0 && !gt_min_normal && !le_neg_min_normal)); then
+        if [[ "$exception_handling_mode" != "IgnoreExactUnderflow" ]] && ((mantissa != 0 && !gt_min_normal && !le_neg_min_normal)); then
             ((flags |= flag_underflow))
         fi
         local decoded_flags=()
@@ -104,7 +104,7 @@ exec > "test_data/from_real_algebraic_number.txt"
 for rounding_mode in TiesToEven TowardZero TowardNegative TowardPositive TiesToAway; do
     lc_rounding_mode="`echo "$rounding_mode" | sed 's/\([^A-Z]\)\([A-Z]\)/\1_\2/g; s/.*/\L&/'`"
     for tininess_detection_mode in BeforeRounding AfterRounding; do
-        for exception_handling_mode in DefaultIgnoreExactUnderflow DefaultSignalExactUnderflow; do
+        for exception_handling_mode in IgnoreExactUnderflow SignalExactUnderflow; do
             echo "# test the values right around zero for $rounding_mode $exception_handling_mode $tininess_detection_mode"
             write_test_cases -0x20 0x20 0x4 -28 $rounding_mode $exception_handling_mode $tininess_detection_mode
             echo
@@ -116,16 +116,16 @@ for rounding_mode in TiesToEven TowardZero TowardNegative TowardPositive TiesToA
         done
     done
     echo "# test the values right around 1 and -1 for $rounding_mode"
-    write_test_cases -0x4020 -0x3FE0 0x4 -14 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
-    write_test_cases 0x3FE0 0x4020 0x4 -14 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
+    write_test_cases -0x4020 -0x3FE0 0x4 -14 $rounding_mode IgnoreExactUnderflow BeforeRounding
+    write_test_cases 0x3FE0 0x4020 0x4 -14 $rounding_mode IgnoreExactUnderflow BeforeRounding
     echo
     echo "# test the values right around max normal for $rounding_mode"
-    write_test_cases -0x4010 -0x3FF0 0x2 2 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
-    write_test_cases 0x3FF0 0x4010 0x2 2 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
+    write_test_cases -0x4010 -0x3FF0 0x2 2 $rounding_mode IgnoreExactUnderflow BeforeRounding
+    write_test_cases 0x3FF0 0x4010 0x2 2 $rounding_mode IgnoreExactUnderflow BeforeRounding
     echo
     echo "# test the values much larger than max normal for $rounding_mode"
-    write_test_cases -1 -1 1 20 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
-    write_test_cases 1 1 1 20 $rounding_mode DefaultIgnoreExactUnderflow BeforeRounding
+    write_test_cases -1 -1 1 20 $rounding_mode IgnoreExactUnderflow BeforeRounding
+    write_test_cases 1 1 1 20 $rounding_mode IgnoreExactUnderflow BeforeRounding
     echo
 done
 echo >&2
