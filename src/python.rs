@@ -302,8 +302,8 @@ impl PyObjectProtocol for PyFPState {
     }
 }
 
-#[doc = "DynamicFloat(value = None, *, bits = None, fp_state = None, properties = None)\n--\n\n"]
 #[pyclass(name = DynamicFloat, module = "simple_soft_float")]
+#[text_signature = "(value=None, *, bits=None, fp_state=None, properties=None)"]
 struct PyDynamicFloat {
     value_opt: Option<DynamicFloat>,
 }
@@ -742,23 +742,23 @@ impl PyNumberProtocol for PyDynamicFloat {
     }
 }
 
-#[doc = "PlatformProperties(\
-         value = None, \
-         *, \
-         canonical_nan_sign = None, \
-         canonical_nan_mantissa_msb = None, \
-         canonical_nan_mantissa_second_to_msb = None, \
-         canonical_nan_mantissa_rest = None, \
-         std_bin_ops_nan_propagation_mode = None, \
-         fma_nan_propagation_mode = None, \
-         fma_inf_zero_qnan_result = None, \
-         round_to_integral_nan_propagation_mode = None, \
-         next_up_or_down_nan_propagation_mode = None, \
-         scale_b_nan_propagation_mode = None, \
-         sqrt_nan_propagation_mode = None, \
-         float_to_float_conversion_nan_propagation_mode = None, \
-         rsqrt_nan_propagation_mode = None)\n--\n\n"]
 #[pyclass(name = PlatformProperties, module = "simple_soft_float")]
+#[text_signature = "(\
+                    value = None, \
+                    *, \
+                    canonical_nan_sign = None, \
+                    canonical_nan_mantissa_msb = None, \
+                    canonical_nan_mantissa_second_to_msb = None, \
+                    canonical_nan_mantissa_rest = None, \
+                    std_bin_ops_nan_propagation_mode = None, \
+                    fma_nan_propagation_mode = None, \
+                    fma_inf_zero_qnan_result = None, \
+                    round_to_integral_nan_propagation_mode = None, \
+                    next_up_or_down_nan_propagation_mode = None, \
+                    scale_b_nan_propagation_mode = None, \
+                    sqrt_nan_propagation_mode = None, \
+                    float_to_float_conversion_nan_propagation_mode = None, \
+                    rsqrt_nan_propagation_mode = None)"]
 #[derive(Copy, Clone, PartialEq)]
 pub(crate) struct PyPlatformProperties {
     value: PlatformProperties,
@@ -863,8 +863,8 @@ impl PyObjectProtocol for PyPlatformProperties {
     }
 }
 
-#[doc = "FloatProperties(exponent_width, mantissa_width, has_implicit_leading_bit, has_sign_bit, platform_properties)\n--\n\n"]
 #[pyclass(name = FloatProperties, module = "simple_soft_float")]
+#[text_signature = "(exponent_width, mantissa_width, has_implicit_leading_bit, has_sign_bit, platform_properties)"]
 #[derive(Copy, Clone)]
 struct PyFloatProperties {
     value: FloatProperties,
