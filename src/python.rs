@@ -254,6 +254,7 @@ python_methods! {
         fn tininess_detection_mode(&self) -> TininessDetectionMode {
             self.value.tininess_detection_mode
         }
+        /// combine two `FPState` values into one, returning the result
         #[text_signature = "(self, other)"]
         fn merge(&self, other: FPState) -> PyResult<FPState> {
             Ok(self.value.checked_merge(other)?)
@@ -480,6 +481,7 @@ python_methods! {
         fn is_nan(&self) -> bool {
             self.value().is_nan()
         }
+        /// `true` if `self` is finite (not NaN or infinity)
         #[getter]
         fn is_finite(&self) -> bool {
             self.value().is_finite()

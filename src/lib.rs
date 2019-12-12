@@ -3,6 +3,9 @@
 
 #![allow(clippy::unneeded_field_pattern)]
 #![allow(clippy::too_many_arguments)]
+// #![deny(missing_docs)] // FIXME: reenable
+
+//! Soft-float library that intends to be a straightforward reference implementation of IEEE 754
 
 use algebraics::prelude::*;
 use bitflags::bitflags;
@@ -154,10 +157,15 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_rounding_mode_enum)]
     /// floating-point rounding mode
     pub enum RoundingMode {
+        /// round to nearest, ties to even
         TiesToEven = 0,
+        /// round toward zero
         TowardZero = 1,
+        /// round toward negative infinity
         TowardNegative = 2,
+        /// round toward positive infinity
         TowardPositive = 3,
+        /// round to nearest, ties away from zero
         TiesToAway = 4,
     }
 }
@@ -171,10 +179,18 @@ impl Default for RoundingMode {
 bitflags! {
     /// IEEE 754 status flags
     pub struct StatusFlags: u32 {
+        /// Signaled if there is no usefully definable result.
         const INVALID_OPERATION = 0b00001;
+        /// Signaled when a exact infinite result is generated from an operation
+        /// on finite operands.
         const DIVISION_BY_ZERO = 0b00010;
+        /// Signaled when what would be the correctly rounded result were the
+        /// exponent range unbounded is larger in magnitude than the largest
+        /// finite representable number.
         const OVERFLOW = 0b00100;
+        /// Signaled when a tiny non-zero result is detected.
         const UNDERFLOW = 0b01000;
+        /// Signaled when the result of a floating-point operation is not exact.
         const INEXACT = 0b10000;
     }
 }
@@ -220,7 +236,9 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_tininess_detection_mode_enum)]
     /// IEEE 754 tininess detection mode
     pub enum TininessDetectionMode {
+        /// tininess is detected after rounding
         AfterRounding,
+        /// tininess is detected before rounding
         BeforeRounding,
     }
 }
@@ -235,10 +253,27 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_binary_nan_propagation_mode_enum)]
     /// Select how NaN payloads should be propagated
     pub enum BinaryNaNPropagationMode {
+        /// NaN payloads are always canonical
         AlwaysCanonical,
+        /// If the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else the result is the canonical NaN.
         FirstSecond,
+        /// If the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else the result is the canonical NaN.
         SecondFirst,
+        /// If the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else the result is the canonical NaN.
         FirstSecondPreferringSNaN,
+        /// If the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else the result is the canonical NaN.
         SecondFirstPreferringSNaN,
     }
 }
@@ -247,15 +282,22 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_unary_nan_propagation_mode_enum)]
     /// Select how NaN payloads should be propagated
     pub enum UnaryNaNPropagationMode {
+        /// NaN payloads are always canonical
         AlwaysCanonical,
+        /// If the first argument is a NaN, then the result uses the first argument's payload,
+        /// else the result is the canonical NaN.
         First,
     }
 }
 
+/// results of NaN propagation for binary operation
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum BinaryNaNPropagationResults {
+    /// NaN should be canonical
     Canonical,
+    /// Take NaN payload from first argument
     First,
+    /// Take NaN payload from second argument
     Second,
 }
 
@@ -266,6 +308,7 @@ impl Default for BinaryNaNPropagationResults {
 }
 
 impl BinaryNaNPropagationMode {
+    /// calculate the result of NaN propagation for a floating-point operation
     pub fn calculate_propagation_results(
         self,
         first_class: FloatClass,
@@ -323,9 +366,12 @@ impl BinaryNaNPropagationMode {
     }
 }
 
+/// results of NaN propagation for unary operation
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum UnaryNaNPropagationResults {
+    /// NaN should be canonical
     Canonical,
+    /// Take NaN payload from first argument
     First,
 }
 
@@ -336,6 +382,7 @@ impl Default for UnaryNaNPropagationResults {
 }
 
 impl UnaryNaNPropagationMode {
+    /// calculate the result of NaN propagation for a floating-point operation
     pub fn calculate_propagation_results(
         self,
         first_class: FloatClass,
@@ -384,11 +431,16 @@ impl From<BinaryNaNPropagationMode> for UnaryNaNPropagationMode {
     }
 }
 
+/// results of NaN propagation for ternary operation
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum TernaryNaNPropagationResults {
+    /// NaN should be canonical
     Canonical,
+    /// Take NaN payload from first argument
     First,
+    /// Take NaN payload from second argument
     Second,
+    /// Take NaN payload from third argument
     Third,
 }
 
@@ -402,18 +454,85 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_ternary_nan_propagation_mode_enum)]
     /// Select how NaN payloads should be propagated
     pub enum TernaryNaNPropagationMode {
+        /// NaN payloads are always canonical
         AlwaysCanonical,
+        /// If the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else the result is the canonical NaN.
         FirstSecondThird,
+        /// If the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else the result is the canonical NaN.
         FirstThirdSecond,
+        /// If the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else the result is the canonical NaN.
         SecondFirstThird,
+        /// If the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else the result is the canonical NaN.
         SecondThirdFirst,
+        /// If the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else the result is the canonical NaN.
         ThirdFirstSecond,
+        /// If the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else the result is the canonical NaN.
         ThirdSecondFirst,
+        /// If the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the third argument is a signaling NaN, then the result uses the third argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else the result is the canonical NaN.
         FirstSecondThirdPreferringSNaN,
+        /// If the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the third argument is a signaling NaN, then the result uses the third argument's payload,
+        /// else if the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else the result is the canonical NaN.
         FirstThirdSecondPreferringSNaN,
+        /// If the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the third argument is a signaling NaN, then the result uses the third argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else the result is the canonical NaN.
         SecondFirstThirdPreferringSNaN,
+        /// If the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the third argument is a signaling NaN, then the result uses the third argument's payload,
+        /// else if the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else the result is the canonical NaN.
         SecondThirdFirstPreferringSNaN,
+        /// If the third argument is a signaling NaN, then the result uses the third argument's payload,
+        /// else if the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else the result is the canonical NaN.
         ThirdFirstSecondPreferringSNaN,
+        /// If the third argument is a signaling NaN, then the result uses the third argument's payload,
+        /// else if the second argument is a signaling NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a signaling NaN, then the result uses the first argument's payload,
+        /// else if the third argument is a NaN, then the result uses the third argument's payload,
+        /// else if the second argument is a NaN, then the result uses the second argument's payload,
+        /// else if the first argument is a NaN, then the result uses the first argument's payload,
+        /// else the result is the canonical NaN.
         ThirdSecondFirstPreferringSNaN,
     }
 }
@@ -425,6 +544,7 @@ impl Default for TernaryNaNPropagationMode {
 }
 
 impl TernaryNaNPropagationMode {
+    /// calculate the result of NaN propagation for a floating-point operation
     pub fn calculate_propagation_results(
         self,
         first_class: FloatClass,
@@ -612,8 +732,11 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_fma_inf_zero_qnan_result_enum)]
     /// select the result of fused `Infinity * 0.0 + QNaN` and `0.0 * Infinity + QNaN`
     pub enum FMAInfZeroQNaNResult {
+        /// follow the NaN propagation mode without signaling the `INVALID_OPERATION` exception
         FollowNaNPropagationMode,
+        /// generate a canonical NaN and signal the `INVALID_OPERATION` exception
         CanonicalAndGenerateInvalid,
+        /// follow the NaN propagation mode and signal the `INVALID_OPERATION` exception
         PropagateAndGenerateInvalid,
     }
 }
@@ -628,21 +751,30 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_float_to_float_conversion_nan_propagation_mode_enum)]
     /// select how NaN payloads are propagated in float -> float conversions
     pub enum FloatToFloatConversionNaNPropagationMode {
+        /// NaN payloads are always canonical
         AlwaysCanonical,
+        /// NaN payloads are copied, zero-extending or truncating as many bits as
+        /// necessary from the LSB side of the payload, retaining the most-significant bits.
         RetainMostSignificantBits,
     }
 }
 
+/// The dynamic state of a floating-point implementation
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
 pub struct FPState {
+    /// the dynamic rounding mode -- used whenever the rounding mode is not explicitly overridden
     pub rounding_mode: RoundingMode,
+    /// the cumulative exception status flags
     pub status_flags: StatusFlags,
+    /// the exception handling mode
     pub exception_handling_mode: ExceptionHandlingMode,
+    /// the tininess detection mode
     pub tininess_detection_mode: TininessDetectionMode,
     // FIXME: switch to using #[non_exhaustive] once on stable (rustc 1.40)
     _non_exhaustive: (),
 }
 
+/// `FPState` merging failed due to incompatibility
 #[derive(Clone, Debug, Default)]
 pub struct FPStateMergeFailed;
 
@@ -699,20 +831,31 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_float_class_enum)]
     /// float classification
     pub enum FloatClass {
+        /// negative infinity
         NegativeInfinity,
+        /// negative normal
         NegativeNormal,
+        /// negative subnormal
         NegativeSubnormal,
+        /// negative zero
         NegativeZero,
+        /// positive infinity
         PositiveInfinity,
+        /// positive normal
         PositiveNormal,
+        /// positive subnormal
         PositiveSubnormal,
+        /// positive zero
         PositiveZero,
+        /// quiet NaN
         QuietNaN,
+        /// signaling NaN
         SignalingNaN,
     }
 }
 
 impl FloatClass {
+    /// get sign of non-NaN values
     #[inline]
     pub fn sign(self) -> Option<Sign> {
         match self {
@@ -727,6 +870,7 @@ impl FloatClass {
             FloatClass::QuietNaN | FloatClass::SignalingNaN => None,
         }
     }
+    /// convert negative to positive
     #[inline]
     pub fn abs(self) -> Self {
         match self {
@@ -742,66 +886,82 @@ impl FloatClass {
             FloatClass::SignalingNaN => FloatClass::SignalingNaN,
         }
     }
+    /// return `true` if `self` is `NegativeInfinity`
     #[inline]
     pub fn is_negative_infinity(self) -> bool {
         self == FloatClass::NegativeInfinity
     }
+    /// return `true` if `self` is `NegativeNormal`
     #[inline]
     pub fn is_negative_normal(self) -> bool {
         self == FloatClass::NegativeNormal
     }
+    /// return `true` if `self` is `NegativeSubnormal`
     #[inline]
     pub fn is_negative_subnormal(self) -> bool {
         self == FloatClass::NegativeSubnormal
     }
+    /// return `true` if `self` is `NegativeZero`
     #[inline]
     pub fn is_negative_zero(self) -> bool {
         self == FloatClass::NegativeZero
     }
+    /// return `true` if `self` is `PositiveInfinity`
     #[inline]
     pub fn is_positive_infinity(self) -> bool {
         self == FloatClass::PositiveInfinity
     }
+    /// return `true` if `self` is `PositiveNormal`
     #[inline]
     pub fn is_positive_normal(self) -> bool {
         self == FloatClass::PositiveNormal
     }
+    /// return `true` if `self` is `PositiveSubnormal`
     #[inline]
     pub fn is_positive_subnormal(self) -> bool {
         self == FloatClass::PositiveSubnormal
     }
+    /// return `true` if `self` is `PositiveZero`
     #[inline]
     pub fn is_positive_zero(self) -> bool {
         self == FloatClass::PositiveZero
     }
+    /// return `true` if `self` is `QuietNaN`
     #[inline]
     pub fn is_quiet_nan(self) -> bool {
         self == FloatClass::QuietNaN
     }
+    /// return `true` if `self` is `SignalingNaN`
     #[inline]
     pub fn is_signaling_nan(self) -> bool {
         self == FloatClass::SignalingNaN
     }
+    /// return `true` if `self` is infinity
     #[inline]
     pub fn is_infinity(self) -> bool {
         self == FloatClass::NegativeInfinity || self == FloatClass::PositiveInfinity
     }
+    /// return `true` if `self` is `NegativeNormal` or `PositiveNormal`
     #[inline]
     pub fn is_normal(self) -> bool {
         self == FloatClass::NegativeNormal || self == FloatClass::PositiveNormal
     }
+    /// return `true` if `self` is subnormal
     #[inline]
     pub fn is_subnormal(self) -> bool {
         self == FloatClass::NegativeSubnormal || self == FloatClass::PositiveSubnormal
     }
+    /// return `true` if `self` is zero
     #[inline]
     pub fn is_zero(self) -> bool {
         self == FloatClass::NegativeZero || self == FloatClass::PositiveZero
     }
+    /// return `true` if `self` is NaN
     #[inline]
     pub fn is_nan(self) -> bool {
         self == FloatClass::QuietNaN || self == FloatClass::SignalingNaN
     }
+    /// return `true` if `self` is finite (not NaN or infinity)
     #[inline]
     pub fn is_finite(self) -> bool {
         match self {
@@ -814,6 +974,7 @@ impl FloatClass {
             _ => false,
         }
     }
+    /// return `true` if `self` is subnormal or zero
     #[inline]
     pub fn is_subnormal_or_zero(self) -> bool {
         match self {
@@ -862,6 +1023,7 @@ python_enum! {
 }
 
 impl QuietNaNFormat {
+    /// returns `true` if a NaN with the mantissa MSB set to `mantissa_msb_set` is a quiet NaN
     pub fn is_nan_quiet(self, mantissa_msb_set: bool) -> bool {
         match self {
             QuietNaNFormat::Standard => mantissa_msb_set,
@@ -876,20 +1038,35 @@ impl Default for QuietNaNFormat {
     }
 }
 
+/// properties of a floating-point implementation
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PlatformProperties {
+    /// sign of the canonical NaN
     pub canonical_nan_sign: Sign,
+    /// most-significant-bit of the mantissa of the canonical NaN
     pub canonical_nan_mantissa_msb: bool,
+    /// second-most-significant-bit of the mantissa of the canonical NaN
     pub canonical_nan_mantissa_second_to_msb: bool,
+    /// rest of the bits of the mantissa of the canonical NaN
     pub canonical_nan_mantissa_rest: bool,
+    /// NaN payload propagation mode for the standard binary operations
     pub std_bin_ops_nan_propagation_mode: BinaryNaNPropagationMode,
+    /// NaN payload propagation mode for `fused_mul_add`
     pub fma_nan_propagation_mode: TernaryNaNPropagationMode,
+    /// the result of `fused_mul_add` for `(Infinity * 0.0) + QNaN` and
+    /// `(0.0 * Infinity) + QNaN`
     pub fma_inf_zero_qnan_result: FMAInfZeroQNaNResult,
+    /// NaN payload propagation mode for `round_to_integral`
     pub round_to_integral_nan_propagation_mode: UnaryNaNPropagationMode,
+    /// NaN payload propagation mode for `next_up_or_down`, `next_up`, and `next_down`
     pub next_up_or_down_nan_propagation_mode: UnaryNaNPropagationMode,
+    /// NaN payload propagation mode for `scale_b`
     pub scale_b_nan_propagation_mode: UnaryNaNPropagationMode,
+    /// NaN payload propagation mode for `sqrt`
     pub sqrt_nan_propagation_mode: UnaryNaNPropagationMode,
+    /// NaN payload propagation mode for float-to-float conversions
     pub float_to_float_conversion_nan_propagation_mode: FloatToFloatConversionNaNPropagationMode,
+    /// NaN payload propagation mode for `rsqrt`
     pub rsqrt_nan_propagation_mode: UnaryNaNPropagationMode,
     // FIXME: switch to using #[non_exhaustive] once on stable (rustc 1.40)
     _non_exhaustive: (),
@@ -1650,7 +1827,9 @@ python_enum! {
     #[pyenum(module = simple_soft_float, repr = u8, test_fn = test_up_or_down_enum)]
     /// select Up or Down
     pub enum UpOrDown {
+        /// Up
         Up,
+        /// Down
         Down,
     }
 }
@@ -1957,6 +2136,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn is_nan(&self) -> bool {
         self.class().is_nan()
     }
+    /// return `true` if `self` is finite (not NaN or infinity)
     #[inline]
     pub fn is_finite(&self) -> bool {
         self.class().is_finite()
@@ -2871,6 +3051,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn next_down(&self, fp_state: Option<&mut FPState>) -> Self {
         self.next_up_or_down(UpOrDown::Down, fp_state)
     }
+    /// get the floor of the log base 2 of the absolute value of `self`
     pub fn log_b(&self, fp_state: Option<&mut FPState>) -> Option<BigInt> {
         let mut default_fp_state = FPState::default();
         let fp_state = fp_state.unwrap_or(&mut default_fp_state);
@@ -3290,83 +3471,98 @@ impl From<DynamicFloat> for Float<FloatProperties> {
 
 macro_rules! impl_dynamic_float_fn {
     (
+        $(#[doc = $doc:literal])+
         $fn_name:ident, $called_fn_name:ident,
         (&self$(, $args:ident: $arg_types:ty)*)
     ) => {
-        pub fn $fn_name(
-            &self,
-            $($args: $arg_types,)*
-        ) -> Self {
-            let mut fp_state = self.fp_state;
-            let value = self
-                .value
-                .$called_fn_name($($args,)* Some(&mut fp_state));
-            Self {
-                fp_state,
-                value,
-                _private: (),
+        impl DynamicFloat {
+            $(#[doc = $doc])+
+            pub fn $fn_name(
+                &self,
+                $($args: $arg_types,)*
+            ) -> Self {
+                let mut fp_state = self.fp_state;
+                let value = self
+                    .value
+                    .$called_fn_name($($args,)* Some(&mut fp_state));
+                Self {
+                    fp_state,
+                    value,
+                    _private: (),
+                }
             }
         }
     };
     (
+        $(#[doc = $doc:literal])+
         $fn_name:ident, $checked_fn_name:ident, $called_fn_name:ident,
         (&self$(, $before_args:ident: $before_arg_types:ty)*),
         ($($float_args:ident: &Self),*),
         ($($after_args:ident: $after_arg_types:ty),*)
     ) => {
-        pub fn $fn_name(
-            &self,
-            $($before_args: $before_args_type,)*
-            $($float_args: &Self,)*
-            $($after_args: $after_arg_types,)*
-        ) -> Self {
-            let mut fp_state = self.fp_state;
-            $(fp_state.merge_assign($float_args.fp_state);)*
-            let value = self
-                .value
-                .$called_fn_name($($before_args,)* $(&$float_args.value,)* $($after_args,)* Some(&mut fp_state));
-            Self {
-                fp_state,
-                value,
-                _private: (),
+        impl DynamicFloat {
+            $(#[doc = $doc])+
+            pub fn $fn_name(
+                &self,
+                $($before_args: $before_args_type,)*
+                $($float_args: &Self,)*
+                $($after_args: $after_arg_types,)*
+            ) -> Self {
+                let mut fp_state = self.fp_state;
+                $(fp_state.merge_assign($float_args.fp_state);)*
+                let value = self
+                    .value
+                    .$called_fn_name($($before_args,)* $(&$float_args.value,)* $($after_args,)* Some(&mut fp_state));
+                Self {
+                    fp_state,
+                    value,
+                    _private: (),
+                }
             }
-        }
-        pub fn $checked_fn_name(
-            &self,
-            $($before_args: $before_args_type,)*
-            $($float_args: &Self,)*
-            $($after_args: $after_arg_types,)*
-        ) -> Result<Self, FPStateMergeFailed> {
-            let mut fp_state = self.fp_state;
-            $(fp_state.checked_merge_assign($float_args.fp_state)?;)*
-            let value = self
-                .value
-                .$called_fn_name($($before_args,)* $(&$float_args.value,)* $($after_args,)* Some(&mut fp_state));
-            Ok(Self {
-                fp_state,
-                value,
-                _private: (),
-            })
+            $(#[doc = $doc])+
+            pub fn $checked_fn_name(
+                &self,
+                $($before_args: $before_args_type,)*
+                $($float_args: &Self,)*
+                $($after_args: $after_arg_types,)*
+            ) -> Result<Self, FPStateMergeFailed> {
+                let mut fp_state = self.fp_state;
+                $(fp_state.checked_merge_assign($float_args.fp_state)?;)*
+                let value = self
+                    .value
+                    .$called_fn_name($($before_args,)* $(&$float_args.value,)* $($after_args,)* Some(&mut fp_state));
+                Ok(Self {
+                    fp_state,
+                    value,
+                    _private: (),
+                })
+            }
         }
     };
 }
 
 macro_rules! impl_dynamic_float_from_int_type {
     ($from_int_with_traits:ident, $from_int:ident, $int:ident) => {
-        /// `rounding_mode` only used for this conversion
-        pub fn $from_int(
-            value: $int,
-            rounding_mode: Option<RoundingMode>,
-            fp_state: Option<FPState>,
-            properties: FloatProperties,
-        ) -> Self {
-            let mut fp_state = fp_state.unwrap_or_default();
-            let value =
-                Float::$from_int_with_traits(value, rounding_mode, Some(&mut fp_state), properties);
-            Self {
-                fp_state,
-                value,
-                _private: (),
+        impl DynamicFloat {
+            // `rounding_mode` only used for this conversion
+            pub fn $from_int(
+                value: $int,
+                rounding_mode: Option<RoundingMode>,
+                fp_state: Option<FPState>,
+                properties: FloatProperties,
+            ) -> Self {
+                let mut fp_state = fp_state.unwrap_or_default();
+                let value = Float::$from_int_with_traits(
+                    value,
+                    rounding_mode,
+                    Some(&mut fp_state),
+                    properties,
+                );
+                Self {
+                    fp_state,
+                    value,
+                    _private: (),
+                }
             }
         }
     };
@@ -3374,19 +3570,22 @@ macro_rules! impl_dynamic_float_from_int_type {
 
 macro_rules! impl_dynamic_float_to_int_type {
     ($name:ident, $int:ident) => {
-        pub fn $name(
-            &self,
-            exact: bool,
-            rounding_mode: Option<RoundingMode>,
-        ) -> (Option<$int>, FPState) {
-            let mut fp_state = self.fp_state;
-            let result = self.value.$name(exact, rounding_mode, Some(&mut fp_state));
-            (result, fp_state)
+        impl DynamicFloat {
+            pub fn $name(
+                &self,
+                exact: bool,
+                rounding_mode: Option<RoundingMode>,
+            ) -> (Option<$int>, FPState) {
+                let mut fp_state = self.fp_state;
+                let result = self.value.$name(exact, rounding_mode, Some(&mut fp_state));
+                (result, fp_state)
+            }
         }
     };
 }
 
 impl DynamicFloat {
+    /// create from `properties`
     pub fn new(properties: FloatProperties) -> Self {
         Self {
             fp_state: FPState::default(),
@@ -3394,6 +3593,7 @@ impl DynamicFloat {
             _private: (),
         }
     }
+    /// create from `bits` and `properties`
     pub fn from_bits(bits: BigUint, properties: FloatProperties) -> Option<Self> {
         if bits <= properties.overall_mask::<BigUint>() {
             Some(Self {
@@ -3405,33 +3605,43 @@ impl DynamicFloat {
             None
         }
     }
+    /// get the bits of `self`
     pub fn into_bits(self) -> BigUint {
         self.value.into_bits()
     }
+    /// get the positive zero value
     pub fn positive_zero(properties: FloatProperties) -> Self {
         Float::positive_zero_with_traits(properties).into()
     }
+    /// get the negative zero value
     pub fn negative_zero(properties: FloatProperties) -> Self {
         Float::negative_zero_with_traits(properties).into()
     }
+    /// get the zero with sign `sign`
     pub fn signed_zero(sign: Sign, properties: FloatProperties) -> Self {
         Float::signed_zero_with_traits(sign, properties).into()
     }
+    /// get the positive infinity value
     pub fn positive_infinity(properties: FloatProperties) -> Self {
         Float::positive_infinity_with_traits(properties).into()
     }
+    /// get the negative infinity value
     pub fn negative_infinity(properties: FloatProperties) -> Self {
         Float::negative_infinity_with_traits(properties).into()
     }
+    /// get the infinity with sign `sign`
     pub fn signed_infinity(sign: Sign, properties: FloatProperties) -> Self {
         Float::signed_infinity_with_traits(sign, properties).into()
     }
+    /// get the canonical quiet NaN, which is also just the canonical NaN
     pub fn quiet_nan(properties: FloatProperties) -> Self {
         Float::quiet_nan_with_traits(properties).into()
     }
+    /// get the canonical signaling NaN
     pub fn signaling_nan(properties: FloatProperties) -> Self {
         Float::signaling_nan_with_traits(properties).into()
     }
+    /// convert `self` into a quiet NaN
     pub fn into_quiet_nan(self) -> Self {
         let Self {
             fp_state,
@@ -3444,6 +3654,7 @@ impl DynamicFloat {
             _private: (),
         }
     }
+    /// convert `self` into a quiet NaN
     pub fn to_quiet_nan(&self) -> Self {
         let Self {
             fp_state,
@@ -3456,9 +3667,11 @@ impl DynamicFloat {
             _private: (),
         }
     }
+    /// get the largest finite value with sign `sign`
     pub fn signed_max_normal(sign: Sign, properties: FloatProperties) -> Self {
         Float::signed_max_normal_with_traits(sign, properties).into()
     }
+    /// get the subnormal value closest to zero with sign `sign`
     pub fn signed_min_subnormal(sign: Sign, properties: FloatProperties) -> Self {
         Float::signed_min_subnormal_with_traits(sign, properties).into()
     }
@@ -3482,54 +3695,64 @@ impl DynamicFloat {
             _private: (),
         }
     }
-    impl_dynamic_float_fn!(
-        add_with_rounding_mode,
-        checked_add_with_rounding_mode,
-        add,
-        (&self),
-        (rhs: &Self),
-        (rounding_mode: Option<RoundingMode>)
-    );
-    impl_dynamic_float_fn!(
-        sub_with_rounding_mode,
-        checked_sub_with_rounding_mode,
-        sub,
-        (&self),
-        (rhs: &Self),
-        (rounding_mode: Option<RoundingMode>)
-    );
-    impl_dynamic_float_fn!(
-        mul_with_rounding_mode,
-        checked_mul_with_rounding_mode,
-        mul,
-        (&self),
-        (rhs: &Self),
-        (rounding_mode: Option<RoundingMode>)
-    );
-    impl_dynamic_float_fn!(
-        div_with_rounding_mode,
-        checked_div_with_rounding_mode,
-        div,
-        (&self),
-        (rhs: &Self),
-        (rounding_mode: Option<RoundingMode>)
-    );
-    impl_dynamic_float_fn!(
-        ieee754_remainder,
-        checked_ieee754_remainder,
-        ieee754_remainder,
-        (&self),
-        (rhs: &Self),
-        (rounding_mode: Option<RoundingMode>)
-    );
-    impl_dynamic_float_fn!(
-        fused_mul_add,
-        checked_fused_mul_add,
-        fused_mul_add,
-        (&self),
-        (factor: &Self, term: &Self),
-        (rounding_mode: Option<RoundingMode>)
-    );
+}
+impl_dynamic_float_fn!(
+    /// add two `DynamicFloat` values, returning the result
+    add_with_rounding_mode,
+    checked_add_with_rounding_mode,
+    add,
+    (&self),
+    (rhs: &Self),
+    (rounding_mode: Option<RoundingMode>)
+);
+impl_dynamic_float_fn!(
+    /// subtract two `DynamicFloat` values, returning the result
+    sub_with_rounding_mode,
+    checked_sub_with_rounding_mode,
+    sub,
+    (&self),
+    (rhs: &Self),
+    (rounding_mode: Option<RoundingMode>)
+);
+impl_dynamic_float_fn!(
+    /// multiply two `DynamicFloat` values, returning the result
+    mul_with_rounding_mode,
+    checked_mul_with_rounding_mode,
+    mul,
+    (&self),
+    (rhs: &Self),
+    (rounding_mode: Option<RoundingMode>)
+);
+impl_dynamic_float_fn!(
+    /// divide two `DynamicFloat` values, returning the result
+    div_with_rounding_mode,
+    checked_div_with_rounding_mode,
+    div,
+    (&self),
+    (rhs: &Self),
+    (rounding_mode: Option<RoundingMode>)
+);
+impl_dynamic_float_fn!(
+    /// calculate the IEEE 754 remainder of two `DynamicFloat` values, returning the result
+    ieee754_remainder,
+    checked_ieee754_remainder,
+    ieee754_remainder,
+    (&self),
+    (rhs: &Self),
+    (rounding_mode: Option<RoundingMode>)
+);
+impl_dynamic_float_fn!(
+    /// calculate the result of `(self * factor) + term` rounding only once, returning the result
+    fused_mul_add,
+    checked_fused_mul_add,
+    fused_mul_add,
+    (&self),
+    (factor: &Self, term: &Self),
+    (rounding_mode: Option<RoundingMode>)
+);
+
+impl DynamicFloat {
+    /// round `self` to an integer using `rounding_mode` if it is not `None`, returning the result as a tuple of an integer or `None`, and `FPState`
     pub fn round_to_integer(
         &self,
         exact: bool,
@@ -3541,29 +3764,57 @@ impl DynamicFloat {
             .round_to_integer(exact, rounding_mode, Some(&mut fp_state));
         (value, fp_state)
     }
-    impl_dynamic_float_fn!(
-        round_to_integral,
-        round_to_integral,
-        (&self, exact: bool, rounding_mode: Option<RoundingMode>)
-    );
-    impl_dynamic_float_fn!(
-        next_up_or_down,
-        next_up_or_down,
-        (&self, up_or_down: UpOrDown)
-    );
-    impl_dynamic_float_fn!(next_up, next_up, (&self));
-    impl_dynamic_float_fn!(next_down, next_down, (&self));
+}
+
+impl_dynamic_float_fn!(
+    /// round `self` to an integer using `rounding_mode` if it is not `None`, returning the result as a `DynamicFloat`
+    round_to_integral,
+    round_to_integral,
+    (&self, exact: bool, rounding_mode: Option<RoundingMode>)
+);
+impl_dynamic_float_fn!(
+    /// compute the result of `next_up` or `next_down`
+    next_up_or_down,
+    next_up_or_down,
+    (&self, up_or_down: UpOrDown)
+);
+impl_dynamic_float_fn!(
+    /// compute the least floating-point number that compares greater than `self`
+    next_up,
+    next_up,
+    (&self)
+);
+impl_dynamic_float_fn!(
+    /// compute the greatest floating-point number that compares less than `self`
+    next_down,
+    next_down,
+    (&self)
+);
+
+impl DynamicFloat {
+    /// get the floor of the log base 2 of the absolute value of `self`
     pub fn log_b(&self) -> (Option<BigInt>, FPState) {
         let mut fp_state = self.fp_state;
         let value = self.value.log_b(Some(&mut fp_state));
         (value, fp_state)
     }
-    impl_dynamic_float_fn!(
-        scale_b,
-        scale_b,
-        (&self, scale: BigInt, rounding_mode: Option<RoundingMode>)
-    );
-    impl_dynamic_float_fn!(sqrt, sqrt, (&self, rounding_mode: Option<RoundingMode>));
+}
+
+impl_dynamic_float_fn!(
+    /// get `self * 2^scale`
+    scale_b,
+    scale_b,
+    (&self, scale: BigInt, rounding_mode: Option<RoundingMode>)
+);
+impl_dynamic_float_fn!(
+    /// get the square-root of `self`
+    sqrt,
+    sqrt,
+    (&self, rounding_mode: Option<RoundingMode>)
+);
+
+impl DynamicFloat {
+    /// convert `src` to the floating-point format specified by `properties`.
     pub fn convert_from_dynamic_float(
         src: &Self,
         rounding_mode: Option<RoundingMode>,
@@ -3582,7 +3833,7 @@ impl DynamicFloat {
             _private: (),
         }
     }
-    /// `rounding_mode` only used for this conversion
+    /// convert `src` to the floating-point format specified by `properties`.
     pub fn convert_from_float<SrcFT: FloatTraits>(
         src: &Float<SrcFT>,
         rounding_mode: Option<RoundingMode>,
@@ -3602,6 +3853,7 @@ impl DynamicFloat {
             _private: (),
         }
     }
+    /// convert `self` to the floating-point format specified by `properties`.
     pub fn convert_to_dynamic_float(
         &self,
         rounding_mode: Option<RoundingMode>,
@@ -3609,22 +3861,26 @@ impl DynamicFloat {
     ) -> Self {
         Self::convert_from_dynamic_float(self, rounding_mode, properties)
     }
+    /// compute the absolute value of `self`
     pub fn abs(&self) -> Self {
         let mut retval = self.clone();
         retval.abs_assign();
         retval
     }
+    /// construct a `DynamicFloat` from `self` but with the sign of `sign_src`
     pub fn copy_sign<FT2: FloatTraits>(&self, sign_src: &Float<FT2>) -> Self {
         let mut retval = self.clone();
         retval.set_sign(sign_src.sign());
         retval
     }
+    /// compare two `DynamicFloat` values
     pub fn compare(&self, rhs: &Self, quiet: bool) -> (Option<Ordering>, FPState) {
         let mut fp_state = self.fp_state;
         fp_state.merge_assign(rhs.fp_state);
         let result = self.value.compare(&rhs.value, quiet, Some(&mut fp_state));
         (result, fp_state)
     }
+    /// compare two `DynamicFloat` values
     pub fn checked_compare(
         &self,
         rhs: &Self,
@@ -3635,12 +3891,14 @@ impl DynamicFloat {
         let result = self.value.compare(&rhs.value, quiet, Some(&mut fp_state));
         Ok((result, fp_state))
     }
+    /// compare two `DynamicFloat` values
     pub fn compare_quiet(&self, rhs: &Self) -> (Option<Ordering>, FPState) {
         let mut fp_state = self.fp_state;
         fp_state.merge_assign(rhs.fp_state);
         let result = self.value.compare_quiet(&rhs.value, Some(&mut fp_state));
         (result, fp_state)
     }
+    /// compare two `DynamicFloat` values
     pub fn checked_compare_quiet(
         &self,
         rhs: &Self,
@@ -3650,6 +3908,7 @@ impl DynamicFloat {
         let result = self.value.compare_quiet(&rhs.value, Some(&mut fp_state));
         Ok((result, fp_state))
     }
+    /// compare two `DynamicFloat` values
     pub fn compare_signaling(&self, rhs: &Self) -> (Option<Ordering>, FPState) {
         let mut fp_state = self.fp_state;
         fp_state.merge_assign(rhs.fp_state);
@@ -3658,6 +3917,7 @@ impl DynamicFloat {
             .compare_signaling(&rhs.value, Some(&mut fp_state));
         (result, fp_state)
     }
+    /// compare two `DynamicFloat` values
     pub fn checked_compare_signaling(
         &self,
         rhs: &Self,
@@ -3669,36 +3929,42 @@ impl DynamicFloat {
             .compare_signaling(&rhs.value, Some(&mut fp_state));
         Ok((result, fp_state))
     }
-    impl_dynamic_float_from_int_type!(from_bigint_with_traits, from_bigint, BigInt);
-    impl_dynamic_float_from_int_type!(from_biguint_with_traits, from_biguint, BigUint);
-    impl_dynamic_float_from_int_type!(from_u8_with_traits, from_u8, u8);
-    impl_dynamic_float_from_int_type!(from_u16_with_traits, from_u16, u16);
-    impl_dynamic_float_from_int_type!(from_u32_with_traits, from_u32, u32);
-    impl_dynamic_float_from_int_type!(from_u64_with_traits, from_u64, u64);
-    impl_dynamic_float_from_int_type!(from_u128_with_traits, from_u128, u128);
-    impl_dynamic_float_from_int_type!(from_usize_with_traits, from_usize, usize);
-    impl_dynamic_float_from_int_type!(from_i8_with_traits, from_i8, i8);
-    impl_dynamic_float_from_int_type!(from_i16_with_traits, from_i16, i16);
-    impl_dynamic_float_from_int_type!(from_i32_with_traits, from_i32, i32);
-    impl_dynamic_float_from_int_type!(from_i64_with_traits, from_i64, i64);
-    impl_dynamic_float_from_int_type!(from_i128_with_traits, from_i128, i128);
-    impl_dynamic_float_from_int_type!(from_isize_with_traits, from_isize, isize);
-    impl_dynamic_float_to_int_type!(to_bigint, BigInt);
-    impl_dynamic_float_to_int_type!(to_biguint, BigUint);
-    impl_dynamic_float_to_int_type!(to_u8, u8);
-    impl_dynamic_float_to_int_type!(to_u16, u16);
-    impl_dynamic_float_to_int_type!(to_u32, u32);
-    impl_dynamic_float_to_int_type!(to_u64, u64);
-    impl_dynamic_float_to_int_type!(to_u128, u128);
-    impl_dynamic_float_to_int_type!(to_usize, usize);
-    impl_dynamic_float_to_int_type!(to_i8, i8);
-    impl_dynamic_float_to_int_type!(to_i16, i16);
-    impl_dynamic_float_to_int_type!(to_i32, i32);
-    impl_dynamic_float_to_int_type!(to_i64, i64);
-    impl_dynamic_float_to_int_type!(to_i128, i128);
-    impl_dynamic_float_to_int_type!(to_isize, isize);
-    impl_dynamic_float_fn!(rsqrt, rsqrt, (&self, rounding_mode: Option<RoundingMode>));
 }
+
+impl_dynamic_float_from_int_type!(from_bigint_with_traits, from_bigint, BigInt);
+impl_dynamic_float_from_int_type!(from_biguint_with_traits, from_biguint, BigUint);
+impl_dynamic_float_from_int_type!(from_u8_with_traits, from_u8, u8);
+impl_dynamic_float_from_int_type!(from_u16_with_traits, from_u16, u16);
+impl_dynamic_float_from_int_type!(from_u32_with_traits, from_u32, u32);
+impl_dynamic_float_from_int_type!(from_u64_with_traits, from_u64, u64);
+impl_dynamic_float_from_int_type!(from_u128_with_traits, from_u128, u128);
+impl_dynamic_float_from_int_type!(from_usize_with_traits, from_usize, usize);
+impl_dynamic_float_from_int_type!(from_i8_with_traits, from_i8, i8);
+impl_dynamic_float_from_int_type!(from_i16_with_traits, from_i16, i16);
+impl_dynamic_float_from_int_type!(from_i32_with_traits, from_i32, i32);
+impl_dynamic_float_from_int_type!(from_i64_with_traits, from_i64, i64);
+impl_dynamic_float_from_int_type!(from_i128_with_traits, from_i128, i128);
+impl_dynamic_float_from_int_type!(from_isize_with_traits, from_isize, isize);
+impl_dynamic_float_to_int_type!(to_bigint, BigInt);
+impl_dynamic_float_to_int_type!(to_biguint, BigUint);
+impl_dynamic_float_to_int_type!(to_u8, u8);
+impl_dynamic_float_to_int_type!(to_u16, u16);
+impl_dynamic_float_to_int_type!(to_u32, u32);
+impl_dynamic_float_to_int_type!(to_u64, u64);
+impl_dynamic_float_to_int_type!(to_u128, u128);
+impl_dynamic_float_to_int_type!(to_usize, usize);
+impl_dynamic_float_to_int_type!(to_i8, i8);
+impl_dynamic_float_to_int_type!(to_i16, i16);
+impl_dynamic_float_to_int_type!(to_i32, i32);
+impl_dynamic_float_to_int_type!(to_i64, i64);
+impl_dynamic_float_to_int_type!(to_i128, i128);
+impl_dynamic_float_to_int_type!(to_isize, isize);
+impl_dynamic_float_fn!(
+    /// compute reciprocal square-root (`1.0 / sqrt(self)`)
+    rsqrt,
+    rsqrt,
+    (&self, rounding_mode: Option<RoundingMode>)
+);
 
 macro_rules! impl_dynamic_float_binary_op_trait {
     ($op_trait:ident, $op:ident, $op_assign_trait:ident, $op_assign:ident, $called_fn_name:ident) => {

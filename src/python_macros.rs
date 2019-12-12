@@ -237,30 +237,30 @@ macro_rules! python_enum_impl {
 macro_rules! python_enum {
     (
         #[pyenum(module = $module:ident, repr = $repr_type:ident, test_fn = $test_fn:ident)]
-        $(#[doc = $enum_doc:literal])*
+        $(#[doc = $enum_doc:literal])+
         $vis:vis enum $enum_name:ident {
             $(
-                $(#[doc = $value_doc:literal])*
+                $(#[doc = $value_doc:literal])+
                 $value_name:ident $(= $value_init:expr)*,
             )+
         }
     ) => {
-        $(#[doc = $enum_doc])*
+        $(#[doc = $enum_doc])+
         #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
         #[repr($repr_type)]
         $vis enum $enum_name {
             $(
-                $(#[doc = $value_doc])*
+                $(#[doc = $value_doc])+
                 $value_name $(= $value_init)*,
             )+
         }
 
         python_enum_impl! {
             #[pyenum(module = $module, repr = $repr_type, test_fn = $test_fn)]
-            $(#[doc = $enum_doc])*
+            $(#[doc = $enum_doc])+
             $vis enum $enum_name {
                 $(
-                    $(#[doc = $value_doc])*
+                    $(#[doc = $value_doc])+
                     $value_name $(= $value_init)*,
                 )+
             }
