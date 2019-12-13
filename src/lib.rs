@@ -3,7 +3,7 @@
 
 #![allow(clippy::unneeded_field_pattern)]
 #![allow(clippy::too_many_arguments)]
-// #![deny(missing_docs)] // FIXME: reenable
+#![deny(missing_docs)]
 
 //! Soft-float library that intends to be a straightforward reference implementation of IEEE 754
 
@@ -1165,6 +1165,7 @@ macro_rules! platform_properties_constants {
 }
 
 platform_properties_constants! {
+    /// ARM 32-bit platform properties
     pub const ARM: PlatformProperties = PlatformProperties::new_simple(
         Sign::Positive,
         true,
@@ -1177,6 +1178,7 @@ platform_properties_constants! {
         FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
     );
+    /// RISC-V platform properties
     pub const RISC_V: PlatformProperties = PlatformProperties::new_simple(
         Sign::Positive,
         true,
@@ -1188,6 +1190,7 @@ platform_properties_constants! {
         FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid,
         FloatToFloatConversionNaNPropagationMode::AlwaysCanonical,
     );
+    /// Power ISA platform properties
     pub const POWER: PlatformProperties = PlatformProperties::new_simple(
         Sign::Positive,
         true,
@@ -1200,6 +1203,7 @@ platform_properties_constants! {
         FMAInfZeroQNaNResult::PropagateAndGenerateInvalid,
         FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
     );
+    /// MIPS 2008 revision platform properties
     pub const MIPS_2008: PlatformProperties = PlatformProperties::new_simple(
         Sign::Positive,
         true,
@@ -1213,6 +1217,7 @@ platform_properties_constants! {
         FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
     );
     // X86_X87 is not implemented
+    /// x86 SSE/AVX platform properties
     pub const X86_SSE: PlatformProperties = PlatformProperties::new_simple(
         Sign::Negative,
         true,
@@ -1225,6 +1230,7 @@ platform_properties_constants! {
         FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
     );
+    /// Sparc platform properties
     pub const SPARC: PlatformProperties = PlatformProperties::new_simple(
         Sign::Positive,
         true,
@@ -1237,6 +1243,7 @@ platform_properties_constants! {
         FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
     );
+    /// HPPA platform properties
     pub const HPPA: PlatformProperties = PlatformProperties::new_simple(
         Sign::Positive,
         false,
@@ -1249,6 +1256,7 @@ platform_properties_constants! {
         FMAInfZeroQNaNResult::FollowNaNPropagationMode,
         FloatToFloatConversionNaNPropagationMode::RetainMostSignificantBits,
     );
+    /// MIPS pre-2008 revision platform properties
     pub const MIPS_LEGACY: PlatformProperties = PlatformProperties::new_simple(
         Sign::Positive,
         false,
@@ -1264,6 +1272,7 @@ platform_properties_constants! {
 }
 
 impl PlatformProperties {
+    /// create `PlatformProperties`
     pub const fn new_simple(
         canonical_nan_sign: Sign,
         canonical_nan_mantissa_msb: bool,
@@ -1292,9 +1301,12 @@ impl PlatformProperties {
             _non_exhaustive: (),
         }
     }
+    /// default `PlatformProperties`.
+    /// currently returns `RISC_V`
     pub const fn default() -> Self {
         Self::RISC_V
     }
+    /// get the `QuietNaNFormat`
     pub fn quiet_nan_format(self) -> QuietNaNFormat {
         if self.canonical_nan_mantissa_msb {
             QuietNaNFormat::Standard
@@ -1304,6 +1316,7 @@ impl PlatformProperties {
     }
 }
 
+/// `FloatProperties` values incompatible: must be equal
 #[derive(Clone, Debug, Default)]
 pub struct FloatPropertiesIncompatible;
 
@@ -1322,6 +1335,7 @@ impl From<FloatPropertiesIncompatible> for PyErr {
     }
 }
 
+/// properties of a particular floating-point format
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FloatProperties {
     exponent_width: usize,
@@ -1332,6 +1346,7 @@ pub struct FloatProperties {
 }
 
 impl FloatProperties {
+    /// check for compatibility between two `FloatProperties` values
     #[inline]
     pub fn check_compatibility(self, other: Self) -> Result<(), FloatPropertiesIncompatible> {
         if self == other {
@@ -1340,6 +1355,7 @@ impl FloatProperties {
             Err(FloatPropertiesIncompatible)
         }
     }
+    /// create a new `FloatProperties` value
     #[inline]
     pub const fn new_with_extended_flags(
         exponent_width: usize,
@@ -1356,6 +1372,7 @@ impl FloatProperties {
             platform_properties,
         }
     }
+    /// create a new `FloatProperties` value
     #[inline]
     pub const fn new(exponent_width: usize, mantissa_width: usize) -> Self {
         Self {
@@ -1366,6 +1383,7 @@ impl FloatProperties {
             platform_properties: PlatformProperties::default(),
         }
     }
+    /// create a new `FloatProperties` value
     #[inline]
     pub const fn new_with_platform_properties(
         exponent_width: usize,
@@ -1457,10 +1475,12 @@ impl FloatProperties {
             }
         }
     }
+    /// construct `FloatProperties` for standard `width`-bit binary interchange format, if it exists
     #[inline]
     pub fn standard(width: usize) -> Option<Self> {
         Self::standard_with_platform_properties(width, PlatformProperties::default())
     }
+    /// check if `self` is a standard binary interchange format.
     #[inline]
     pub fn is_standard(self) -> bool {
         Self::standard_with_platform_properties(self.width(), self.platform_properties())
@@ -1481,50 +1501,78 @@ impl FloatProperties {
     pub const fn has_implicit_leading_bit(self) -> bool {
         self.has_implicit_leading_bit
     }
+    /// if the floating-point format has a sign bit
     #[inline]
     pub const fn has_sign_bit(self) -> bool {
         self.has_sign_bit
     }
+    /// get the `PlatformProperties`
     #[inline]
     pub const fn platform_properties(self) -> PlatformProperties {
         self.platform_properties
     }
+    /// get the `QuietNaNFormat`
     #[inline]
     pub fn quiet_nan_format(self) -> QuietNaNFormat {
         self.platform_properties.quiet_nan_format()
     }
+    /// get the floating-point format's width in bits
     #[inline]
     pub const fn width(self) -> usize {
         self.has_sign_bit as usize + self.exponent_width + self.mantissa_width
     }
+    /// get the number of bits after the radix point in the representation of normal floating-point values
     #[inline]
     pub const fn fraction_width(self) -> usize {
         self.mantissa_width - !self.has_implicit_leading_bit as usize
     }
+    /// get the amount by which the floating-point bits should be shifted right
+    /// in order to extract the sign field.
+    ///
+    /// the sign field can be extracted using `(bits & sign_field_mask) >> sign_field_shift`
     #[inline]
     pub const fn sign_field_shift(self) -> usize {
         self.exponent_width + self.mantissa_width
     }
+    /// get the bitwise mask for the sign field (before shifting to extract).
+    ///
+    /// the sign field can be extracted using `(bits & sign_field_mask) >> sign_field_shift`
     pub fn sign_field_mask<Bits: FloatBitsType>(self) -> Bits {
         Bits::one() << self.sign_field_shift()
     }
+    /// get the amount by which the floating-point bits should be shifted right
+    /// in order to extract the exponent field.
+    ///
+    /// the exponent field can be extracted using `(bits & exponent_field_mask) >> exponent_field_shift`
     #[inline]
     pub const fn exponent_field_shift(self) -> usize {
         self.mantissa_width
     }
+    /// get the bitwise mask for the exponent field (before shifting to extract).
+    ///
+    /// the exponent field can be extracted using `(bits & exponent_field_mask) >> exponent_field_shift`
     pub fn exponent_field_mask<Bits: FloatBitsType>(self) -> Bits {
         ((Bits::one() << self.exponent_width) - Bits::one()) << self.exponent_field_shift()
     }
+    /// get the amount by which the floating-point bits should be shifted right
+    /// in order to extract the mantissa field.
+    ///
+    /// the mantissa field can be extracted using `(bits & mantissa_field_mask) >> mantissa_field_shift`
     #[inline]
     pub const fn mantissa_field_shift(self) -> usize {
         0
     }
+    /// get the bitwise mask for the mantissa field (before shifting to extract).
+    ///
+    /// the mantissa field can be extracted using `(bits & mantissa_field_mask) >> mantissa_field_shift`
     pub fn mantissa_field_mask<Bits: FloatBitsType>(self) -> Bits {
         (Bits::one() << self.mantissa_width) - Bits::one()
     }
+    /// get the maximum value of the mantissa field
     pub fn mantissa_field_max<Bits: FloatBitsType>(self) -> Bits {
         (Bits::one() << self.mantissa_width) - Bits::one()
     }
+    /// get the minimum value the mantissa field can take on for normal floating-point numbers.
     pub fn mantissa_field_normal_min<Bits: FloatBitsType>(self) -> Bits {
         if self.has_implicit_leading_bit {
             Bits::zero()
@@ -1532,13 +1580,26 @@ impl FloatProperties {
             Bits::one() << self.fraction_width()
         }
     }
+    /// get the amount by which the floating-point bits should be shifted right
+    /// in order to extract the mantissa field's MSB.
+    ///
+    /// the mantissa field's MSB can be extracted using `(bits & mantissa_field_msb_mask) >> mantissa_field_msb_shift`
     #[inline]
     pub const fn mantissa_field_msb_shift(self) -> usize {
         self.mantissa_width - 1
     }
+    /// get the bitwise mask for the mantissa field's MSB (before shifting to extract).
+    ///
+    /// the mantissa field's MSB can be extracted using `(bits & mantissa_field_msb_mask) >> mantissa_field_msb_shift`
     pub fn mantissa_field_msb_mask<Bits: FloatBitsType>(self) -> Bits {
         Bits::one() << self.mantissa_field_msb_shift()
     }
+    /// get the amount by which the exponent field is offset from the
+    /// mathematical exponent for normal floating-point numbers.
+    ///
+    /// the mathematical exponent and the exponent field's values for normal
+    /// floating-point numbers are related by the following equation:
+    /// `mathematical_exponent + exponent_bias == exponent_field`
     pub fn exponent_bias<Bits: FloatBitsType>(self) -> Bits {
         if self.exponent_width == 0 {
             Bits::zero()
@@ -1546,18 +1607,31 @@ impl FloatProperties {
             (Bits::one() << (self.exponent_width - 1)) - Bits::one()
         }
     }
+    /// get the value used in the exponent field for infinities and NaNs
     pub fn exponent_inf_nan<Bits: FloatBitsType>(self) -> Bits {
         (Bits::one() << self.exponent_width) - Bits::one()
     }
+    /// get the value used in the exponent field for zeros and subnormals
     pub fn exponent_zero_subnormal<Bits: FloatBitsType>(self) -> Bits {
         Bits::zero()
     }
+    /// get the minimum value of the exponent field for normal floating-point numbers.
+    ///
+    /// the mathematical exponent and the exponent field's values for normal
+    /// floating-point numbers are related by the following equation:
+    /// `mathematical_exponent + exponent_bias == exponent_field`
     pub fn exponent_min_normal<Bits: FloatBitsType>(self) -> Bits {
         Bits::one()
     }
+    /// get the maximum value of the exponent field for normal floating-point numbers.
+    ///
+    /// the mathematical exponent and the exponent field's values for normal
+    /// floating-point numbers are related by the following equation:
+    /// `mathematical_exponent + exponent_bias == exponent_field`
     pub fn exponent_max_normal<Bits: FloatBitsType>(self) -> Bits {
         self.exponent_inf_nan::<Bits>() - Bits::one()
     }
+    /// get the mask for the whole floating-point format
     pub fn overall_mask<Bits: FloatBitsType>(self) -> Bits {
         self.sign_field_mask::<Bits>()
             | self.exponent_field_mask::<Bits>()
@@ -1626,32 +1700,47 @@ impl fmt::Debug for FloatProperties {
     }
 }
 
+/// `FloatProperties` values along with the type used to represent bits for a floating-point format
 pub trait FloatTraits: Clone + fmt::Debug + PartialEq {
+    /// the type used to represent bits for a floating-point format
     type Bits: FloatBitsType;
+    /// get the `FloatProperties` value
     fn properties(&self) -> FloatProperties;
 }
 
+/// `FloatTraits` where `Bits = u16` and `properties` returns `FloatProperties::STANDARD_16`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F16Traits;
 
+/// `FloatTraits` where `Bits = u16` and `properties` returns
+/// `FloatProperties::standard_16_with_platform_properties(self.0)`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub struct F16WithPlatformPropertiesTraits(pub PlatformProperties);
 
+/// `FloatTraits` where `Bits = u32` and `properties` returns `FloatProperties::STANDARD_32`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F32Traits;
 
+/// `FloatTraits` where `Bits = u32` and `properties` returns
+/// `FloatProperties::standard_32_with_platform_properties(self.0)`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub struct F32WithPlatformPropertiesTraits(pub PlatformProperties);
 
+/// `FloatTraits` where `Bits = u64` and `properties` returns `FloatProperties::STANDARD_64`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F64Traits;
 
+/// `FloatTraits` where `Bits = u64` and `properties` returns
+/// `FloatProperties::standard_64_with_platform_properties(self.0)`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub struct F64WithPlatformPropertiesTraits(pub PlatformProperties);
 
+/// `FloatTraits` where `Bits = u128` and `properties` returns `FloatProperties::STANDARD_128`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 pub struct F128Traits;
 
+/// `FloatTraits` where `Bits = u128` and `properties` returns
+/// `FloatProperties::standard_128_with_platform_properties(self.0)`
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub struct F128WithPlatformPropertiesTraits(pub PlatformProperties);
 
@@ -1849,6 +1938,7 @@ impl From<UpOrDown> for Sign {
     }
 }
 
+/// the floating-point type with the specified `FloatTraits`
 #[derive(Copy, Clone)]
 pub struct Float<FT: FloatTraits> {
     traits: FT,
@@ -1863,6 +1953,7 @@ impl<FT: FloatTraits + Default> Default for Float<FT> {
 
 macro_rules! impl_from_int_type {
     ($from_int_with_traits:ident, $from_int:ident, $int:ident) => {
+        /// convert from integer to floating-point
         pub fn $from_int_with_traits(
             value: $int,
             rounding_mode: Option<RoundingMode>,
@@ -1876,6 +1967,7 @@ macro_rules! impl_from_int_type {
                 traits,
             )
         }
+        /// convert from integer to floating-point
         pub fn $from_int(
             value: $int,
             rounding_mode: Option<RoundingMode>,
@@ -1891,6 +1983,7 @@ macro_rules! impl_from_int_type {
 
 macro_rules! impl_to_int_type {
     ($name:ident, $from_bigint:ident, $int:ident) => {
+        /// convert from floating-point to integer
         pub fn $name(
             &self,
             exact: bool,
@@ -1919,39 +2012,49 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         );
         bits
     }
+    /// construct `Float` from bits
     pub fn from_bits_and_traits(bits: Bits, traits: FT) -> Self {
         Self {
             bits: Self::check_bits(bits, &traits),
             traits,
         }
     }
+    /// construct `Float` from bits
     pub fn from_bits(bits: Bits) -> Self
     where
         FT: Default,
     {
         Self::from_bits_and_traits(bits, FT::default())
     }
+    /// get the underlying bits
     pub fn bits(&self) -> &Bits {
         &self.bits
     }
+    /// set the underlying bits
     pub fn set_bits(&mut self, bits: Bits) {
         self.bits = Self::check_bits(bits, &self.traits);
     }
+    /// get the `FloatTraits`
     pub fn traits(&self) -> &FT {
         &self.traits
     }
+    /// get the bits and `FloatTraits`
     pub fn into_bits_and_traits(self) -> (Bits, FT) {
         (self.bits, self.traits)
     }
+    /// get the underlying bits
     pub fn into_bits(self) -> Bits {
         self.bits
     }
+    /// get the `FloatTraits`
     pub fn into_traits(self) -> FT {
         self.traits
     }
+    /// get the `FloatProperties`
     pub fn properties(&self) -> FloatProperties {
         self.traits.properties()
     }
+    /// get the sign
     pub fn sign(&self) -> Sign {
         let properties = self.properties();
         if properties.has_sign_bit() {
@@ -1974,6 +2077,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         BitOrAssign::<&Bits>::bitor_assign(&mut self.bits, &bits);
         self.xor_bits(bits)
     }
+    /// set the sign
     pub fn set_sign(&mut self, sign: Sign) {
         let properties = self.properties();
         if !properties.has_sign_bit() {
@@ -1985,15 +2089,26 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             Sign::Negative => self.or_bits(properties.sign_field_mask()),
         }
     }
+    /// toggle the sign
     pub fn toggle_sign(&mut self) {
         let properties = self.properties();
         assert!(properties.has_sign_bit());
         self.xor_bits(properties.sign_field_mask());
     }
+    /// get the exponent field
+    ///
+    /// the mathematical exponent and the exponent field's values for normal
+    /// floating-point numbers are related by the following equation:
+    /// `mathematical_exponent + exponent_bias == exponent_field`
     pub fn exponent_field(&self) -> Bits {
         let properties = self.properties();
         (properties.exponent_field_mask::<Bits>() & &self.bits) >> properties.exponent_field_shift()
     }
+    /// set the exponent field
+    ///
+    /// the mathematical exponent and the exponent field's values for normal
+    /// floating-point numbers are related by the following equation:
+    /// `mathematical_exponent + exponent_bias == exponent_field`
     pub fn set_exponent_field(&mut self, mut exponent: Bits) {
         let properties = self.properties();
         exponent <<= properties.exponent_field_shift();
@@ -2005,10 +2120,12 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         self.and_not_bits(mask);
         self.or_bits(exponent);
     }
+    /// get the mantissa field
     pub fn mantissa_field(&self) -> Bits {
         let properties = self.properties();
         (properties.mantissa_field_mask::<Bits>() & &self.bits) >> properties.mantissa_field_shift()
     }
+    /// set the mantissa field
     pub fn set_mantissa_field(&mut self, mut mantissa: Bits) {
         let properties = self.properties();
         mantissa <<= properties.mantissa_field_shift();
@@ -2020,10 +2137,12 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         self.and_not_bits(mask);
         self.or_bits(mantissa);
     }
+    /// get the mantissa field's MSB
     pub fn mantissa_field_msb(&self) -> bool {
         let properties = self.properties();
         !(properties.mantissa_field_msb_mask::<Bits>() & &self.bits).is_zero()
     }
+    /// set the mantissa field's MSB
     pub fn set_mantissa_field_msb(&mut self, mantissa_msb: bool) {
         let properties = self.properties();
         if mantissa_msb {
@@ -2032,6 +2151,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             self.and_not_bits(properties.mantissa_field_msb_mask());
         }
     }
+    /// calculate the `FloatClass`
     pub fn class(&self) -> FloatClass {
         let properties = self.properties();
         let sign = self.sign();
@@ -2076,62 +2196,77 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             Sign::Negative => -retval,
         }
     }
+    /// return `true` if `self.class()` is `NegativeInfinity`
     #[inline]
     pub fn is_negative_infinity(&self) -> bool {
         self.class().is_negative_infinity()
     }
+    /// return `true` if `self.class()` is `NegativeNormal`
     #[inline]
     pub fn is_negative_normal(&self) -> bool {
         self.class().is_negative_normal()
     }
+    /// return `true` if `self.class()` is `NegativeSubnormal`
     #[inline]
     pub fn is_negative_subnormal(&self) -> bool {
         self.class().is_negative_subnormal()
     }
+    /// return `true` if `self.class()` is `NegativeZero`
     #[inline]
     pub fn is_negative_zero(&self) -> bool {
         self.class().is_negative_zero()
     }
+    /// return `true` if `self.class()` is `PositiveInfinity`
     #[inline]
     pub fn is_positive_infinity(&self) -> bool {
         self.class().is_positive_infinity()
     }
+    /// return `true` if `self.class()` is `PositiveNormal`
     #[inline]
     pub fn is_positive_normal(&self) -> bool {
         self.class().is_positive_normal()
     }
+    /// return `true` if `self.class()` is `PositiveSubnormal`
     #[inline]
     pub fn is_positive_subnormal(&self) -> bool {
         self.class().is_positive_subnormal()
     }
+    /// return `true` if `self.class()` is `PositiveZero`
     #[inline]
     pub fn is_positive_zero(&self) -> bool {
         self.class().is_positive_zero()
     }
+    /// return `true` if `self.class()` is `QuietNaN`
     #[inline]
     pub fn is_quiet_nan(&self) -> bool {
         self.class().is_quiet_nan()
     }
+    /// return `true` if `self.class()` is `SignalingNaN`
     #[inline]
     pub fn is_signaling_nan(&self) -> bool {
         self.class().is_signaling_nan()
     }
+    /// return `true` if `self` is infinity
     #[inline]
     pub fn is_infinity(&self) -> bool {
         self.class().is_infinity()
     }
+    /// return `true` if `self.class()` is `NegativeNormal` or `PositiveNormal`
     #[inline]
     pub fn is_normal(&self) -> bool {
         self.class().is_normal()
     }
+    /// return `true` if `self` is subnormal
     #[inline]
     pub fn is_subnormal(&self) -> bool {
         self.class().is_subnormal()
     }
+    /// return `true` if `self` is zero
     #[inline]
     pub fn is_zero(&self) -> bool {
         self.class().is_zero()
     }
+    /// return `true` if `self` is NaN
     #[inline]
     pub fn is_nan(&self) -> bool {
         self.class().is_nan()
@@ -2141,10 +2276,13 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     pub fn is_finite(&self) -> bool {
         self.class().is_finite()
     }
+    /// return `true` if `self` is subnormal or zero
     #[inline]
     pub fn is_subnormal_or_zero(&self) -> bool {
         self.class().is_subnormal_or_zero()
     }
+    /// get the mathematical value of `self` as a `Ratio<BigInt>`.
+    /// if `self` is NaN or infinite, returns `None`.
     pub fn to_ratio(&self) -> Option<Ratio<BigInt>> {
         if !self.is_finite() {
             return None;
@@ -2186,78 +2324,93 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         }
         Some(retval)
     }
+    /// get the mathematical value of `self` as a `RealAlgebraicNumber`.
+    /// if `self` is NaN or infinite, returns `None`.
     pub fn to_real_algebraic_number(&self) -> Option<RealAlgebraicNumber> {
         self.to_ratio().map(Into::into)
     }
+    /// get the positive zero value
     pub fn positive_zero_with_traits(traits: FT) -> Self {
         Self::from_bits_and_traits(Bits::zero(), traits)
     }
+    /// get the positive zero value
     pub fn positive_zero() -> Self
     where
         FT: Default,
     {
         Self::positive_zero_with_traits(FT::default())
     }
+    /// get the negative zero value
     pub fn negative_zero_with_traits(traits: FT) -> Self {
         let properties = traits.properties();
         assert!(properties.has_sign_bit());
         let bits = properties.sign_field_mask::<Bits>();
         Self::from_bits_and_traits(bits, traits)
     }
+    /// get the negative zero value
     pub fn negative_zero() -> Self
     where
         FT: Default,
     {
         Self::negative_zero_with_traits(FT::default())
     }
+    /// get the zero with sign `sign`
     pub fn signed_zero_with_traits(sign: Sign, traits: FT) -> Self {
         match sign {
             Sign::Positive => Self::positive_zero_with_traits(traits),
             Sign::Negative => Self::negative_zero_with_traits(traits),
         }
     }
+    /// get the zero with sign `sign`
     pub fn signed_zero(sign: Sign) -> Self
     where
         FT: Default,
     {
         Self::signed_zero_with_traits(sign, FT::default())
     }
+    /// get the positive infinity value
     pub fn positive_infinity_with_traits(traits: FT) -> Self {
         let properties = traits.properties();
         let mut retval = Self::positive_zero_with_traits(traits);
         retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
         retval
     }
+    /// get the positive infinity value
     pub fn positive_infinity() -> Self
     where
         FT: Default,
     {
         Self::positive_infinity_with_traits(FT::default())
     }
+    /// get the negative infinity value
     pub fn negative_infinity_with_traits(traits: FT) -> Self {
         let properties = traits.properties();
         let mut retval = Self::negative_zero_with_traits(traits);
         retval.set_exponent_field(properties.exponent_inf_nan::<Bits>());
         retval
     }
+    /// get the negative infinity value
     pub fn negative_infinity() -> Self
     where
         FT: Default,
     {
         Self::negative_infinity_with_traits(FT::default())
     }
+    /// get the infinity with sign `sign`
     pub fn signed_infinity_with_traits(sign: Sign, traits: FT) -> Self {
         match sign {
             Sign::Positive => Self::positive_infinity_with_traits(traits),
             Sign::Negative => Self::negative_infinity_with_traits(traits),
         }
     }
+    /// get the infinity with sign `sign`
     pub fn signed_infinity(sign: Sign) -> Self
     where
         FT: Default,
     {
         Self::signed_infinity_with_traits(sign, FT::default())
     }
+    /// get the canonical quiet NaN, which is also just the canonical NaN
     pub fn quiet_nan_with_traits(traits: FT) -> Self {
         let properties = traits.properties();
         let mut retval = Self::positive_zero_with_traits(traits);
@@ -2271,12 +2424,14 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         }
         retval
     }
+    /// get the canonical quiet NaN, which is also just the canonical NaN
     pub fn quiet_nan() -> Self
     where
         FT: Default,
     {
         Self::quiet_nan_with_traits(FT::default())
     }
+    /// get the canonical signaling NaN
     pub fn signaling_nan_with_traits(traits: FT) -> Self {
         let properties = traits.properties();
         let mut retval = Self::positive_zero_with_traits(traits);
@@ -2287,12 +2442,14 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         }
         retval
     }
+    /// get the canonical signaling NaN
     pub fn signaling_nan() -> Self
     where
         FT: Default,
     {
         Self::signaling_nan_with_traits(FT::default())
     }
+    /// convert `self` into a quiet NaN
     pub fn into_quiet_nan(mut self) -> Self {
         let properties = self.properties();
         self.set_exponent_field(properties.exponent_inf_nan::<Bits>());
@@ -2303,9 +2460,11 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         }
         self
     }
+    /// convert `self` into a quiet NaN
     pub fn to_quiet_nan(&self) -> Self {
         self.clone().into_quiet_nan()
     }
+    /// get the largest finite value with sign `sign`
     pub fn signed_max_normal_with_traits(sign: Sign, traits: FT) -> Self {
         let properties = traits.properties();
         let mut retval = Self::signed_zero_with_traits(sign, traits);
@@ -2313,12 +2472,14 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         retval.set_exponent_field(properties.exponent_max_normal());
         retval
     }
+    /// get the largest finite value with sign `sign`
     pub fn signed_max_normal(sign: Sign) -> Self
     where
         FT: Default,
     {
         Self::signed_max_normal_with_traits(sign, FT::default())
     }
+    /// get the subnormal value closest to zero with sign `sign`
     pub fn signed_min_subnormal_with_traits(sign: Sign, traits: FT) -> Self {
         let properties = traits.properties();
         let mut retval = Self::signed_zero_with_traits(sign, traits);
@@ -2326,12 +2487,14 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         retval.set_exponent_field(properties.exponent_zero_subnormal());
         retval
     }
+    /// get the subnormal value closest to zero with sign `sign`
     pub fn signed_min_subnormal(sign: Sign) -> Self
     where
         FT: Default,
     {
         Self::signed_min_subnormal_with_traits(sign, FT::default())
     }
+    /// round from a `RealAlgebraicNumber` into a floating-point value.
     pub fn from_real_algebraic_number_with_traits(
         value: &RealAlgebraicNumber,
         rounding_mode: Option<RoundingMode>,
@@ -2459,6 +2622,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         }
         retval
     }
+    /// round from a `RealAlgebraicNumber` into a floating-point value.
     pub fn from_real_algebraic_number(
         value: &RealAlgebraicNumber,
         rounding_mode: Option<RoundingMode>,
@@ -2554,6 +2718,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
+    /// add floating-point numbers
     pub fn add(
         &self,
         rhs: &Self,
@@ -2562,6 +2727,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     ) -> Self {
         self.add_or_sub(rhs, rounding_mode, fp_state, false)
     }
+    /// subtract floating-point numbers
     pub fn sub(
         &self,
         rhs: &Self,
@@ -2570,6 +2736,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     ) -> Self {
         self.add_or_sub(rhs, rounding_mode, fp_state, true)
     }
+    /// multiply floating-point numbers
     pub fn mul(
         &self,
         rhs: &Self,
@@ -2619,6 +2786,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             )
         }
     }
+    /// divide floating-point numbers
     pub fn div(
         &self,
         rhs: &Self,
@@ -2671,6 +2839,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             )
         }
     }
+    /// compute the IEEE 754 remainder of two floating-point numbers
     pub fn ieee754_remainder(
         &self,
         rhs: &Self,
@@ -2743,7 +2912,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
-    /// compute `(self * factor) + term`
+    /// calculate the result of `(self * factor) + term` rounding only once, returning the result
     pub fn fused_mul_add(
         &self,
         factor: &Self,
@@ -2840,6 +3009,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
+    /// round `self` to an integer, returning the result as an integer or `None`
     pub fn round_to_integer(
         &self,
         exact: bool,
@@ -2903,6 +3073,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
+    /// round `self` to an integer, returning the result as a `Float`
     pub fn round_to_integral(
         &self,
         exact: bool,
@@ -2946,6 +3117,10 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
+    /// normalize `self`.
+    /// This is a no-op for all floating-point formats where
+    /// `has_implicit_leading_bit` is `true` (which includes all standard
+    /// floating-point formats).
     pub fn normalize(&mut self) {
         let properties = self.properties();
         if properties.has_implicit_leading_bit() {
@@ -2974,6 +3149,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         self.set_exponent_field(exponent_field);
         self.set_mantissa_field(mantissa_field);
     }
+    /// compute the result of `next_up` or `next_down`
     pub fn next_up_or_down(&self, up_or_down: UpOrDown, fp_state: Option<&mut FPState>) -> Self {
         let properties = self.properties();
         let mut default_fp_state = FPState::default();
@@ -3045,9 +3221,11 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
         }
     }
+    /// compute the least floating-point number that compares greater than `self`
     pub fn next_up(&self, fp_state: Option<&mut FPState>) -> Self {
         self.next_up_or_down(UpOrDown::Up, fp_state)
     }
+    /// compute the greatest floating-point number that compares less than `self`
     pub fn next_down(&self, fp_state: Option<&mut FPState>) -> Self {
         self.next_up_or_down(UpOrDown::Down, fp_state)
     }
@@ -3079,6 +3257,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         }
         Some(exponent)
     }
+    /// get `self * 2^scale`
     pub fn scale_b(
         &self,
         mut scale: BigInt,
@@ -3133,6 +3312,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             )
         }
     }
+    /// get the square-root of `self`
     pub fn sqrt(
         &self,
         rounding_mode: Option<RoundingMode>,
@@ -3174,6 +3354,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             )
         }
     }
+    /// convert `src` to the floating-point format specified by `traits`.
     pub fn convert_from_float_with_traits<SrcFT: FloatTraits>(
         src: &Float<SrcFT>,
         rounding_mode: Option<RoundingMode>,
@@ -3223,6 +3404,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             )
         }
     }
+    /// convert `src` to the floating-point format specified by `FT::default()` where `Self` is `Float<FT>`.
     pub fn convert_from_float<SrcFT: FloatTraits>(
         src: &Float<SrcFT>,
         rounding_mode: Option<RoundingMode>,
@@ -3233,6 +3415,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     {
         Self::convert_from_float_with_traits(src, rounding_mode, fp_state, FT::default())
     }
+    /// convert `self` to the floating-point format specified by `traits`.
     pub fn convert_to_float_with_traits<DestFT: FloatTraits>(
         &self,
         rounding_mode: Option<RoundingMode>,
@@ -3241,6 +3424,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     ) -> Float<DestFT> {
         Float::convert_from_float_with_traits(self, rounding_mode, fp_state, traits)
     }
+    /// convert `self` to the floating-point format specified by `DestFT::default()`.
     pub fn convert_to_float<DestFT: FloatTraits + Default>(
         &self,
         rounding_mode: Option<RoundingMode>,
@@ -3248,30 +3432,39 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
     ) -> Float<DestFT> {
         Float::convert_from_float(self, rounding_mode, fp_state)
     }
+    /// negate and assign the result back to `self`.
+    /// identical to `self.toggle_sign()`
     pub fn neg_assign(&mut self) {
         self.toggle_sign();
     }
+    /// compute the negation of `self`
     pub fn neg(&self) -> Self {
         let mut retval = self.clone();
         retval.neg_assign();
         retval
     }
+    /// compute the absolute-value and assign the result back to `self`.
+    /// identical to `self.set_sign(Sign::Positive)`
     pub fn abs_assign(&mut self) {
         self.set_sign(Sign::Positive);
     }
+    /// compute the absolute-value
     pub fn abs(&self) -> Self {
         let mut retval = self.clone();
         retval.abs_assign();
         retval
     }
+    /// set `self`'s sign to the sign of `sign_src`
     pub fn copy_sign_assign<FT2: FloatTraits>(&mut self, sign_src: &Float<FT2>) {
         self.set_sign(sign_src.sign());
     }
+    /// construct a `Float` from `self` but with the sign of `sign_src`
     pub fn copy_sign<FT2: FloatTraits>(&self, sign_src: &Float<FT2>) -> Self {
         let mut retval = self.clone();
         retval.set_sign(sign_src.sign());
         retval
     }
+    /// compare two `Float` values
     pub fn compare(
         &self,
         rhs: &Self,
@@ -3303,9 +3496,11 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             )
         }
     }
+    /// compare two `Float` values
     pub fn compare_quiet(&self, rhs: &Self, fp_state: Option<&mut FPState>) -> Option<Ordering> {
         self.compare(rhs, true, fp_state)
     }
+    /// compare two `Float` values
     pub fn compare_signaling(
         &self,
         rhs: &Self,
@@ -3423,31 +3618,44 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> fmt::Debug for Float<FT>
     }
 }
 
+/// standard 16-bit float
 pub type F16 = Float<F16Traits>;
+/// standard 32-bit float
 pub type F32 = Float<F32Traits>;
+/// standard 64-bit float
 pub type F64 = Float<F64Traits>;
+/// standard 128-bit float
 pub type F128 = Float<F128Traits>;
 
+/// standard 16-bit float
 pub type F16WithPlatformProperties = Float<F16WithPlatformPropertiesTraits>;
+/// standard 32-bit float
 pub type F32WithPlatformProperties = Float<F32WithPlatformPropertiesTraits>;
+/// standard 64-bit float
 pub type F64WithPlatformProperties = Float<F64WithPlatformPropertiesTraits>;
+/// standard 128-bit float
 pub type F128WithPlatformProperties = Float<F128WithPlatformPropertiesTraits>;
 
+/// `Float` with attached `FPState` and dynamically settable `FloatProperties`
 #[derive(Clone, Debug)]
 pub struct DynamicFloat {
+    /// floating-point state
     pub fp_state: FPState,
+    /// floating-point value; also accessible through `*self`
     pub value: Float<FloatProperties>,
     _private: (),
 }
 
 impl Deref for DynamicFloat {
     type Target = Float<FloatProperties>;
+    /// returns `&self.value`
     fn deref(&self) -> &Float<FloatProperties> {
         &self.value
     }
 }
 
 impl DerefMut for DynamicFloat {
+    /// returns `&mut self.value`
     fn deref_mut(&mut self) -> &mut Float<FloatProperties> {
         &mut self.value
     }
@@ -3544,7 +3752,8 @@ macro_rules! impl_dynamic_float_fn {
 macro_rules! impl_dynamic_float_from_int_type {
     ($from_int_with_traits:ident, $from_int:ident, $int:ident) => {
         impl DynamicFloat {
-            // `rounding_mode` only used for this conversion
+            /// convert from integer to floating-point.
+            /// `rounding_mode` only used for this conversion.
             pub fn $from_int(
                 value: $int,
                 rounding_mode: Option<RoundingMode>,
@@ -3571,6 +3780,7 @@ macro_rules! impl_dynamic_float_from_int_type {
 macro_rules! impl_dynamic_float_to_int_type {
     ($name:ident, $int:ident) => {
         impl DynamicFloat {
+            /// convert `self` to an integer, returning the result as a tuple of an integer or `None`, and `FPState`
             pub fn $name(
                 &self,
                 exact: bool,
@@ -3675,6 +3885,7 @@ impl DynamicFloat {
     pub fn signed_min_subnormal(sign: Sign, properties: FloatProperties) -> Self {
         Float::signed_min_subnormal_with_traits(sign, properties).into()
     }
+    /// round from a `RealAlgebraicNumber` into a floating-point value.
     /// `rounding_mode` only used for this conversion
     pub fn from_real_algebraic_number(
         value: &RealAlgebraicNumber,
@@ -3752,7 +3963,7 @@ impl_dynamic_float_fn!(
 );
 
 impl DynamicFloat {
-    /// round `self` to an integer using `rounding_mode` if it is not `None`, returning the result as a tuple of an integer or `None`, and `FPState`
+    /// round `self` to an integer, returning the result as a tuple of an integer or `None`, and `FPState`
     pub fn round_to_integer(
         &self,
         exact: bool,
@@ -3767,7 +3978,7 @@ impl DynamicFloat {
 }
 
 impl_dynamic_float_fn!(
-    /// round `self` to an integer using `rounding_mode` if it is not `None`, returning the result as a `DynamicFloat`
+    /// round `self` to an integer, returning the result as a `DynamicFloat`
     round_to_integral,
     round_to_integral,
     (&self, exact: bool, rounding_mode: Option<RoundingMode>)
