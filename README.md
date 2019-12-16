@@ -6,9 +6,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies.simple-soft-float]
-# switch to crates.io version once new version is published
-git = "https://salsa.debian.org/Kazan-team/simple-soft-float"
-rev = "<current git revision>"
+version = "0.1"
 ```
 
 ## Installation for use from Python

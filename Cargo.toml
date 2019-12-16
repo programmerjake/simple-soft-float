@@ -34,8 +34,6 @@ version = "1.2"
 optional = true
 
 [dependencies.pyo3]
-# switch to crates.io version once new version is published
-git = "https://github.com/PyO3/pyo3.git"
-rev = "352707c29f0a5b42a1d71f1b4f9cb4b63209ae88"
+version = "0.8.4"
 optional = true
 features = ["num-bigint"]
