@@ -9,40 +9,20 @@
 
 use algebraics::prelude::*;
 use bitflags::bitflags;
-use num_bigint::BigInt;
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 use num_rational::Ratio;
-use num_traits::FromPrimitive;
-use num_traits::NumAssign;
-use num_traits::NumAssignRef;
-use num_traits::NumRef;
-use num_traits::ToPrimitive;
-use num_traits::Unsigned;
-use std::cmp::Ordering;
-use std::error::Error;
-use std::fmt;
-use std::ops::Add;
-use std::ops::AddAssign;
-use std::ops::BitAnd;
-use std::ops::BitAndAssign;
-use std::ops::BitOr;
-use std::ops::BitOrAssign;
-use std::ops::BitXor;
-use std::ops::BitXorAssign;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::ops::Div;
-use std::ops::DivAssign;
-use std::ops::Mul;
-use std::ops::MulAssign;
-use std::ops::Neg;
-use std::ops::Shl;
-use std::ops::ShlAssign;
-use std::ops::Shr;
-use std::ops::ShrAssign;
-use std::ops::Sub;
-use std::ops::SubAssign;
+use num_traits::{FromPrimitive, NumAssign, NumAssignRef, NumRef, ToPrimitive, Unsigned};
+use std::{
+    cmp::Ordering,
+    error::Error,
+    fmt,
+    ops::{
+        Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref,
+        DerefMut, Div, DivAssign, Mul, MulAssign, Neg, Shl, ShlAssign, Shr, ShrAssign, Sub,
+        SubAssign,
+    },
+};
 
 #[cfg(feature = "python")]
 use crate::python::PyPlatformProperties;
@@ -1993,7 +1973,10 @@ macro_rules! impl_to_int_type {
             let mut default_fp_state = FPState::default();
             let fp_state = fp_state.unwrap_or(&mut default_fp_state);
             let old_status_flags = fp_state.status_flags;
-            if let Some(retval) = self.round_to_integer(exact, rounding_mode, Some(fp_state)).and_then(|v| v.$from_bigint()) {
+            if let Some(retval) = self
+                .round_to_integer(exact, rounding_mode, Some(fp_state))
+                .and_then(|v| v.$from_bigint())
+            {
                 Some(retval)
             } else {
                 // ignore possible INEXACT flags

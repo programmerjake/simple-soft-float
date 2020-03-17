@@ -4,17 +4,12 @@
 #[cfg(feature = "python")]
 use once_cell::sync::OnceCell;
 #[cfg(feature = "python")]
-use pyo3::exceptions::TypeError;
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
-#[cfg(feature = "python")]
-use pyo3::types::IntoPyDict;
-#[cfg(feature = "python")]
-use pyo3::types::PyAny;
-#[cfg(feature = "python")]
-use pyo3::types::PyType;
-#[cfg(feature = "python")]
-use pyo3::PyNativeType;
+use pyo3::{
+    exceptions::TypeError,
+    prelude::*,
+    types::{IntoPyDict, PyAny, PyType},
+    PyNativeType,
+};
 #[cfg(feature = "python")]
 use std::fmt::{self, Write as _};
 
