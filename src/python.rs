@@ -10,17 +10,18 @@ use crate::{
     UpOrDown,
 };
 use num_bigint::{BigInt, BigUint};
-use once_cell::sync::OnceCell;
 use pyo3::{
     basic::CompareOp,
     exceptions::{TypeError, ValueError},
     prelude::*,
-    types::{PyAny, PyDict, PyType},
-    wrap_pyfunction, PyNativeType, PyNumberProtocol, PyObjectProtocol,
+    types::PyAny,
+    PyNativeType, PyNumberProtocol, PyObjectProtocol,
 };
 use std::{
     borrow::Cow,
     fmt::{self, Write as _},
+    ops::Deref,
+    sync::Arc,
 };
 
 pub(crate) trait ToPythonRepr {
@@ -39,72 +40,58 @@ impl ToPythonRepr for bool {
 
 impl ToPythonRepr for StatusFlags {
     fn to_python_repr(&self) -> Cow<str> {
-        let mut retval = String::new();
-        let mut first = true;
-        for &(name, value) in StatusFlags::MEMBERS {
-            if !self.contains(value) {
-                continue;
-            }
-            if first {
-                first = false;
-            } else {
-                retval += " | ";
-            }
-            retval += "StatusFlags.";
+        let mut retval = String::from("StatusFlags()");
+        let _ = self.for_each_set_flag(|name| -> Result<(), ()> {
+            retval += ".set_";
             retval += name;
-        }
-        if first {
-            Cow::Borrowed("StatusFlags(0)")
-        } else {
-            Cow::Owned(retval)
-        }
+            retval += "()";
+            Ok(())
+        });
+        Cow::Owned(retval)
     }
+}
+
+/// IEEE 754 status flags
+#[pyclass(name = StatusFlags, module = "simple_soft_float")]
+#[derive(Copy, Clone)]
+#[text_signature = "(value=None)"]
+pub(crate) struct PyStatusFlags {
+    pub(crate) value: StatusFlags,
 }
 
 impl FromPyObject<'_> for StatusFlags {
     fn extract(object: &PyAny) -> PyResult<Self> {
-        if !Self::get_python_class(object.py())
-            .extract::<&PyType>(object.py())?
-            .is_instance(object)?
-        {
-            return Err(PyErr::new::<TypeError, _>(
-                "can't extract StatusFlags from value",
-            ));
-        }
-        Ok(Self::from_bits_truncate(
-            object.getattr("value")?.extract()?,
-        ))
+        Ok(PyRef::<PyStatusFlags>::extract(object)?.value)
     }
 }
 
 impl IntoPy<PyObject> for StatusFlags {
     fn into_py(self, py: Python) -> PyObject {
-        Self::get_python_class(py)
-            .call1(py, (self.bits(),))
-            .unwrap()
+        PyStatusFlags { value: self }.into_py(py)
     }
 }
 
-macro_rules! statusflags_members {
-    ($($member:ident,)+) => {
-        [$((stringify!($member), StatusFlags::$member),)+]
+#[pyproto]
+impl PyObjectProtocol for PyStatusFlags {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(self.value.to_python_repr().into_owned())
     }
-}
-
-impl StatusFlags {
-    const MEMBERS: &'static [(&'static str, StatusFlags)] = &statusflags_members![
-        INVALID_OPERATION,
-        DIVISION_BY_ZERO,
-        OVERFLOW,
-        UNDERFLOW,
-        INEXACT,
-    ];
+    fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
+        if let Ok(rhs) = StatusFlags::extract(other) {
+            match op {
+                CompareOp::Eq => return Ok((self.value == rhs).into_py(other.py())),
+                CompareOp::Ne => return Ok((self.value != rhs).into_py(other.py())),
+                CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {}
+            };
+        }
+        Ok(other.py().NotImplemented())
+    }
 }
 
 #[pymodule]
 pub(crate) fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDynamicFloat>()?;
-    m.add(StatusFlags::NAME, StatusFlags::get_python_class(py))?;
+    m.add_class::<PyStatusFlags>()?;
     m.add_class::<PyFloatProperties>()?;
     m.add_class::<PyFPState>()?;
     BinaryNaNPropagationMode::add_to_module(py, m)?;
@@ -123,52 +110,6 @@ pub(crate) fn simple_soft_float(py: Python, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-impl StatusFlags {
-    const NAME: &'static str = "StatusFlags";
-    fn get_python_class(py: Python) -> PyObject {
-        #[pyfunction]
-        fn status_flags_repr(value: StatusFlags) -> String {
-            value.to_python_repr().into_owned()
-        }
-        static CLASS_ONCE_CELL: OnceCell<PyObject> = OnceCell::new();
-        CLASS_ONCE_CELL
-            .get_or_init(|| {
-                let dict = PyDict::new(py);
-                dict.set_item("status_flags_repr", wrap_pyfunction!(status_flags_repr)(py))
-                    .unwrap();
-                fn make_src() -> Result<String, std::fmt::Error> {
-                    let mut src = String::new();
-                    writeln!(src, "def f(status_flags_repr):")?;
-                    writeln!(src, "    import enum")?;
-                    writeln!(src, "    class {}(enum.Flag):", StatusFlags::NAME)?;
-                    writeln!(src, "        \"\"\"IEEE 754 status flags\"\"\"")?;
-                    for &(name, value) in StatusFlags::MEMBERS {
-                        writeln!(src, "        {} = {}", name, value.bits())?;
-                    }
-                    writeln!(src, "        __module__ = \"simple_soft_float\"")?;
-                    writeln!(src, "        __qualname__ = \"{}\"", StatusFlags::NAME)?;
-                    writeln!(src, "        def __repr__(self):")?;
-                    writeln!(src, "            return status_flags_repr(self)")?;
-                    writeln!(
-                        src,
-                        "        __repr__.__qualname__ = \"{}.__repr__\"",
-                        StatusFlags::NAME
-                    )?;
-                    writeln!(src, "    return {}", StatusFlags::NAME)?;
-                    writeln!(src, "{} = f(status_flags_repr)", StatusFlags::NAME)?;
-                    Ok(src)
-                }
-                py.run(&make_src().unwrap(), None, Some(dict))
-                    .map_err(|err| err.print(py))
-                    .unwrap();
-                dict.get_item(StatusFlags::NAME)
-                    .expect("known to exist")
-                    .into_py(py)
-            })
-            .clone_ref(py)
-    }
-}
-
 /// The dynamic state of a floating-point implementation
 #[pyclass(name = FPState, module = "simple_soft_float")]
 #[text_signature = "(\
@@ -184,7 +125,7 @@ struct PyFPState {
 
 impl<'source> FromPyObject<'source> for FPState {
     fn extract(object: &'source PyAny) -> PyResult<FPState> {
-        let value: &PyFPState = object.extract()?;
+        let value: PyRef<PyFPState> = object.extract()?;
         Ok(value.value)
     }
 }
@@ -292,21 +233,25 @@ impl PyObjectProtocol for PyFPState {
 
 /// IEEE 754 floating-point value with attached `FPState`
 #[pyclass(name = DynamicFloat, module = "simple_soft_float")]
+#[derive(Clone)]
 #[text_signature = "(value=None, *, bits=None, fp_state=None, properties=None)"]
 struct PyDynamicFloat {
-    value: DynamicFloat,
+    value: Arc<DynamicFloat>,
 }
 
-impl<'source> FromPyObject<'source> for &'source DynamicFloat {
-    fn extract(object: &'source PyAny) -> PyResult<&'source DynamicFloat> {
-        let value: &PyDynamicFloat = object.extract()?;
-        Ok(&value.value)
+impl Deref for PyDynamicFloat {
+    type Target = DynamicFloat;
+    fn deref(&self) -> &Self::Target {
+        &self.value
     }
 }
 
 impl IntoPy<PyObject> for DynamicFloat {
     fn into_py(self, py: Python) -> PyObject {
-        PyDynamicFloat { value: self }.into_py(py)
+        PyDynamicFloat {
+            value: Arc::new(self),
+        }
+        .into_py(py)
     }
 }
 
@@ -321,12 +266,12 @@ impl PyDynamicFloat {
         properties = "None"
     )]
     fn new(
-        value: Option<&DynamicFloat>,
+        value: Option<PyDynamicFloat>,
         bits: Option<BigUint>,
         fp_state: Option<FPState>,
         properties: Option<FloatProperties>,
     ) -> PyResult<PyDynamicFloat> {
-        let fp_state = fp_state.or_else(|| value.map(|value| value.fp_state));
+        let fp_state = fp_state.or_else(|| value.as_ref().map(|value| value.fp_state));
         let mut value = if let Some(properties) = properties {
             if let Some(bits) = bits {
                 DynamicFloat::from_bits(bits, properties)
@@ -344,11 +289,13 @@ impl PyDynamicFloat {
                 DynamicFloat::from_bits(bits, value.value.properties())
                     .ok_or_else(|| PyErr::new::<ValueError, _>("bits out of range"))?
             } else {
-                value.clone()
+                (*value).clone()
             }
         };
         value.fp_state = fp_state.unwrap_or(value.fp_state);
-        Ok(PyDynamicFloat { value })
+        Ok(PyDynamicFloat {
+            value: Arc::new(value),
+        })
     }
     /// get the underlying bits
     #[getter]
@@ -553,7 +500,7 @@ impl PyDynamicFloat {
     #[args(rounding_mode = "None")]
     fn add(
         &self,
-        rhs: &DynamicFloat,
+        rhs: PyDynamicFloat,
         rounding_mode: Option<RoundingMode>,
     ) -> PyResult<DynamicFloat> {
         self.value
@@ -561,14 +508,14 @@ impl PyDynamicFloat {
             .check_compatibility(rhs.properties())?;
         Ok(self
             .value
-            .checked_add_with_rounding_mode(rhs, rounding_mode)?)
+            .checked_add_with_rounding_mode(&rhs, rounding_mode)?)
     }
     /// subtract floating-point numbers
     #[text_signature = "($self, rhs, rounding_mode=None)"]
     #[args(rounding_mode = "None")]
     fn sub(
         &self,
-        rhs: &DynamicFloat,
+        rhs: PyDynamicFloat,
         rounding_mode: Option<RoundingMode>,
     ) -> PyResult<DynamicFloat> {
         self.value
@@ -576,14 +523,14 @@ impl PyDynamicFloat {
             .check_compatibility(rhs.properties())?;
         Ok(self
             .value
-            .checked_sub_with_rounding_mode(rhs, rounding_mode)?)
+            .checked_sub_with_rounding_mode(&rhs, rounding_mode)?)
     }
     /// multiply floating-point numbers
     #[text_signature = "($self, rhs, rounding_mode=None)"]
     #[args(rounding_mode = "None")]
     fn mul(
         &self,
-        rhs: &DynamicFloat,
+        rhs: PyDynamicFloat,
         rounding_mode: Option<RoundingMode>,
     ) -> PyResult<DynamicFloat> {
         self.value
@@ -591,14 +538,14 @@ impl PyDynamicFloat {
             .check_compatibility(rhs.properties())?;
         Ok(self
             .value
-            .checked_mul_with_rounding_mode(rhs, rounding_mode)?)
+            .checked_mul_with_rounding_mode(&rhs, rounding_mode)?)
     }
     /// divide floating-point numbers
     #[text_signature = "($self, rhs, rounding_mode=None)"]
     #[args(rounding_mode = "None")]
     fn div(
         &self,
-        rhs: &DynamicFloat,
+        rhs: PyDynamicFloat,
         rounding_mode: Option<RoundingMode>,
     ) -> PyResult<DynamicFloat> {
         self.value
@@ -606,28 +553,28 @@ impl PyDynamicFloat {
             .check_compatibility(rhs.properties())?;
         Ok(self
             .value
-            .checked_div_with_rounding_mode(rhs, rounding_mode)?)
+            .checked_div_with_rounding_mode(&rhs, rounding_mode)?)
     }
     /// compute the IEEE 754 remainder of two floating-point numbers
     #[text_signature = "($self, rhs, rounding_mode=None)"]
     #[args(rounding_mode = "None")]
     fn ieee754_remainder(
         &self,
-        rhs: &DynamicFloat,
+        rhs: PyDynamicFloat,
         rounding_mode: Option<RoundingMode>,
     ) -> PyResult<DynamicFloat> {
         self.value
             .properties()
             .check_compatibility(rhs.properties())?;
-        Ok(self.value.checked_ieee754_remainder(rhs, rounding_mode)?)
+        Ok(self.value.checked_ieee754_remainder(&rhs, rounding_mode)?)
     }
     /// calculate the result of `(self * factor) + term` rounding only once, returning the result
     #[text_signature = "($self, factor, term, rounding_mode=None)"]
     #[args(rounding_mode = "None")]
     fn fused_mul_add(
         &self,
-        factor: &DynamicFloat,
-        term: &DynamicFloat,
+        factor: PyDynamicFloat,
+        term: PyDynamicFloat,
         rounding_mode: Option<RoundingMode>,
     ) -> PyResult<DynamicFloat> {
         self.value
@@ -638,7 +585,7 @@ impl PyDynamicFloat {
             .check_compatibility(term.properties())?;
         Ok(self
             .value
-            .checked_fused_mul_add(factor, term, rounding_mode)?)
+            .checked_fused_mul_add(&factor, &term, rounding_mode)?)
     }
     /// round `self` to an integer, returning the result as an integer or `None`
     #[text_signature = "($self, *, exact = False, rounding_mode=None)"]
@@ -706,7 +653,7 @@ impl PyDynamicFloat {
     /// compute the negation of `self`
     #[text_signature = "($self)"]
     fn neg(&self) -> DynamicFloat {
-        -&self.value
+        -&**self
     }
     /// construct a `DynamicFloat` from `self` but with the sign of `sign_src`
     #[text_signature = "($self, sign_src)"]
@@ -765,16 +712,16 @@ impl PyDynamicFloat {
 
 #[pyproto]
 impl PyNumberProtocol for PyDynamicFloat {
-    fn __add__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
+    fn __add__(lhs: PyDynamicFloat, rhs: PyDynamicFloat) -> PyResult<DynamicFloat> {
         lhs.add(rhs, None)
     }
-    fn __sub__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
+    fn __sub__(lhs: PyDynamicFloat, rhs: PyDynamicFloat) -> PyResult<DynamicFloat> {
         lhs.sub(rhs, None)
     }
-    fn __mul__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
+    fn __mul__(lhs: PyDynamicFloat, rhs: PyDynamicFloat) -> PyResult<DynamicFloat> {
         lhs.mul(rhs, None)
     }
-    fn __truediv__(lhs: &PyDynamicFloat, rhs: &DynamicFloat) -> PyResult<DynamicFloat> {
+    fn __truediv__(lhs: PyDynamicFloat, rhs: PyDynamicFloat) -> PyResult<DynamicFloat> {
         lhs.div(rhs, None)
     }
     fn __abs__(&self) -> PyResult<DynamicFloat> {
@@ -810,7 +757,7 @@ pub(crate) struct PyPlatformProperties {
 
 impl FromPyObject<'_> for PlatformProperties {
     fn extract(object: &PyAny) -> PyResult<PlatformProperties> {
-        let value: &PyPlatformProperties = object.extract()?;
+        let value: PyRef<PyPlatformProperties> = object.extract()?;
         Ok(value.value)
     }
 }
@@ -916,10 +863,10 @@ impl PyObjectProtocol for PyPlatformProperties {
         Ok(self.value.to_python_repr().into_owned())
     }
     fn __richcmp__(&self, other: &PyAny, op: CompareOp) -> PyResult<PyObject> {
-        if let Ok(rhs) = <&Self>::extract(other) {
+        if let Ok(rhs) = <PyRef<Self>>::extract(other) {
             match op {
-                CompareOp::Eq => return Ok((self == rhs).into_py(other.py())),
-                CompareOp::Ne => return Ok((self != rhs).into_py(other.py())),
+                CompareOp::Eq => return Ok((self == &*rhs).into_py(other.py())),
+                CompareOp::Ne => return Ok((self != &*rhs).into_py(other.py())),
                 CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => {}
             };
         }
@@ -937,7 +884,7 @@ struct PyFloatProperties {
 
 impl FromPyObject<'_> for FloatProperties {
     fn extract(object: &PyAny) -> PyResult<FloatProperties> {
-        let value: &PyFloatProperties = object.extract()?;
+        let value: PyRef<PyFloatProperties> = object.extract()?;
         Ok(value.value)
     }
 }

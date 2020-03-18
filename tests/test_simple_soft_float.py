@@ -169,7 +169,7 @@ class TestFPState(unittest.TestCase):
 
     def test_smoke_test(self):
         rounding_mode = ssf.RoundingMode.TiesToEven
-        status_flags = ssf.StatusFlags(0)
+        status_flags = ssf.StatusFlags()
         exception_handling_mode = ssf.ExceptionHandlingMode \
             .IgnoreExactUnderflow
         tininess_detection_mode = ssf.TininessDetectionMode.AfterRounding
@@ -185,7 +185,7 @@ class TestFPState(unittest.TestCase):
         self.assertEqual(
             repr(obj),
             "PlatformProperties(rounding_mode=RoundingMode.TiesToEven, "
-            + "status_flags=StatusFlags(0), "
+            + "status_flags=StatusFlags(), "
             + "exception_handling_mode="
             + "ExceptionHandlingMode.IgnoreExactUnderflow, "
             + "tininess_detection_mode=TininessDetectionMode.AfterRounding)")
@@ -346,39 +346,40 @@ class TestStatusFlags(unittest.TestCase):
     maxDiff = None
 
     def test_smoke_test(self):
-        self.assertIsInstance(ssf.StatusFlags.INVALID_OPERATION,
+        self.assertIsInstance(ssf.StatusFlags().set_invalid_operation(),
                               ssf.StatusFlags)
-        self.assertIsInstance(ssf.StatusFlags.DIVISION_BY_ZERO,
+        self.assertIsInstance(ssf.StatusFlags().set_division_by_zero(),
                               ssf.StatusFlags)
-        self.assertIsInstance(ssf.StatusFlags.OVERFLOW,
+        self.assertIsInstance(ssf.StatusFlags().set_overflow(),
                               ssf.StatusFlags)
-        self.assertIsInstance(ssf.StatusFlags.UNDERFLOW,
+        self.assertIsInstance(ssf.StatusFlags().set_underflow(),
                               ssf.StatusFlags)
-        self.assertIsInstance(ssf.StatusFlags.INEXACT,
+        self.assertIsInstance(ssf.StatusFlags().set_inexact(),
                               ssf.StatusFlags)
-        self.assertIsInstance(ssf.StatusFlags(0),
+        self.assertIsInstance(ssf.StatusFlags(),
                               ssf.StatusFlags)
         self.assertEqual(
-            ssf.StatusFlags.INVALID_OPERATION
-            | ssf.StatusFlags.DIVISION_BY_ZERO
-            | ssf.StatusFlags.OVERFLOW
-            | ssf.StatusFlags.UNDERFLOW
-            | ssf.StatusFlags.INEXACT,
-            ssf.StatusFlags(31))
-        self.assertEqual(repr(ssf.StatusFlags(0)),
-                         "StatusFlags(0)")
-        self.assertEqual(repr(ssf.StatusFlags(31)),
-                         "StatusFlags.INVALID_OPERATION | "
-                         + "StatusFlags.DIVISION_BY_ZERO | "
-                         + "StatusFlags.OVERFLOW | "
-                         + "StatusFlags.UNDERFLOW | "
-                         + "StatusFlags.INEXACT")
+            ssf.StatusFlags()
+            .set_invalid_operation()
+            .set_division_by_zero()
+            .set_overflow()
+            .set_underflow()
+            .set_inexact(),
+            ssf.StatusFlags.all())
+        self.assertEqual(repr(ssf.StatusFlags()),
+                         "StatusFlags()")
+        self.assertEqual(repr(ssf.StatusFlags.all()),
+                         "StatusFlags().set_invalid_operation()"
+                         + ".set_division_by_zero()"
+                         + ".set_overflow()"
+                         + ".set_underflow()"
+                         + ".set_inexact()")
 
 
 class TestDynamicFloat(unittest.TestCase):
     maxDiff = None
     properties = ssf.FloatProperties.standard(32,
-                                              ssf.PlatformProperties_RISC_V)
+                                              platform_properties=ssf.PlatformProperties_RISC_V)
 
     def test_signatures(self):
         check_signatures(self, ssf.DynamicFloat)
@@ -399,11 +400,11 @@ class TestDynamicFloat(unittest.TestCase):
         obj = ssf.DynamicFloat(
             properties=self.properties,
             bits=0x3,
-            fp_state=ssf.FPState(status_flags=ssf.StatusFlags.INEXACT))
+            fp_state=ssf.FPState(status_flags=ssf.StatusFlags().set_inexact()))
         self.assertEqual(obj.properties, self.properties)
         self.assertEqual(obj.bits, 0x3)
         self.assertEqual(obj.fp_state,
-                         ssf.FPState(status_flags=ssf.StatusFlags.INEXACT))
+                         ssf.FPState(status_flags=ssf.StatusFlags().set_inexact()))
 
     def test_constants(self):
         cls = ssf.DynamicFloat
@@ -453,23 +454,23 @@ class TestDynamicFloat(unittest.TestCase):
 
     def test_add(self):
         self.handle_binary_op("add", operator.add,
-                              0x00000000, ssf.StatusFlags(0))
+                              0x00000000, ssf.StatusFlags())
 
     def test_sub(self):
         self.handle_binary_op("sub", operator.sub,
-                              0x00000000, ssf.StatusFlags(0))
+                              0x00000000, ssf.StatusFlags())
 
     def test_mul(self):
         self.handle_binary_op("mul", operator.mul,
-                              0x00000000, ssf.StatusFlags(0))
+                              0x00000000, ssf.StatusFlags())
 
     def test_div(self):
         self.handle_binary_op("div", operator.truediv,
-                              0x7FC00000, ssf.StatusFlags.INVALID_OPERATION)
+                              0x7FC00000, ssf.StatusFlags().set_invalid_operation())
 
     def test_ieee754_remainder(self):
         self.handle_binary_op("ieee754_remainder", None,
-                              0x7FC00000, ssf.StatusFlags.INVALID_OPERATION)
+                              0x7FC00000, ssf.StatusFlags().set_invalid_operation())
 
     def test_fused_mul_add(self):
         cls = ssf.DynamicFloat
@@ -477,7 +478,7 @@ class TestDynamicFloat(unittest.TestCase):
         arg = cls.positive_zero(self.properties)
         obj = arg.fused_mul_add(arg, arg, rounding_mode)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_round_to_integer(self):
         cls = ssf.DynamicFloat
@@ -493,23 +494,23 @@ class TestDynamicFloat(unittest.TestCase):
         arg = cls.positive_zero(self.properties)
         obj = arg.round_to_integral(exact=True, rounding_mode=rounding_mode)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_next_up_or_down(self):
         cls = ssf.DynamicFloat
         arg = cls.positive_zero(self.properties)
         obj = arg.next_up_or_down(ssf.UpOrDown.Up)
         self.assertEqual(obj.bits, 0x00000001)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
         obj = arg.next_up_or_down(ssf.UpOrDown.Down)
         self.assertEqual(obj.bits, 0x80000001)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
         obj = arg.next_up()
         self.assertEqual(obj.bits, 0x00000001)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
         obj = arg.next_down()
         self.assertEqual(obj.bits, 0x80000001)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_log_b(self):
         cls = ssf.DynamicFloat
@@ -518,7 +519,7 @@ class TestDynamicFloat(unittest.TestCase):
         self.assertEqual(obj[0], None)
         self.assertEqual(
             obj[1],
-            ssf.FPState(status_flags=ssf.StatusFlags.INVALID_OPERATION))
+            ssf.FPState(status_flags=ssf.StatusFlags().set_invalid_operation()))
 
     def test_scale_b(self):
         cls = ssf.DynamicFloat
@@ -526,7 +527,7 @@ class TestDynamicFloat(unittest.TestCase):
         arg = cls.positive_zero(self.properties)
         obj = arg.scale_b(5, rounding_mode)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_sqrt(self):
         cls = ssf.DynamicFloat
@@ -534,7 +535,7 @@ class TestDynamicFloat(unittest.TestCase):
         arg = cls.positive_zero(self.properties)
         obj = arg.sqrt(rounding_mode)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_convert_to_dynamic_float(self):
         cls = ssf.DynamicFloat
@@ -542,34 +543,34 @@ class TestDynamicFloat(unittest.TestCase):
         arg = cls.positive_zero(self.properties)
         obj = arg.convert_to_dynamic_float(rounding_mode, self.properties)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_abs(self):
         cls = ssf.DynamicFloat
         arg = cls.positive_zero(self.properties)
         obj = arg.abs()
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
         obj = abs(arg)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_neg(self):
         cls = ssf.DynamicFloat
         arg = cls.positive_zero(self.properties)
         obj = arg.neg()
         self.assertEqual(obj.bits, 0x80000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
         obj = -arg
         self.assertEqual(obj.bits, 0x80000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_copy_sign(self):
         cls = ssf.DynamicFloat
         arg = cls.positive_zero(self.properties)
         obj = arg.copy_sign(arg)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_compare(self):
         cls = ssf.DynamicFloat
@@ -592,7 +593,7 @@ class TestDynamicFloat(unittest.TestCase):
         self.assertIsNone(obj[0])
         self.assertEqual(
             obj[1],
-            ssf.FPState(status_flags=ssf.StatusFlags.INVALID_OPERATION))
+            ssf.FPState(status_flags=ssf.StatusFlags().set_invalid_operation()))
         obj = zero.compare(zero, quiet=False)
         self.assertEqual(obj[0], 0)
         self.assertEqual(obj[1], ssf.FPState())
@@ -601,12 +602,12 @@ class TestDynamicFloat(unittest.TestCase):
         cls = ssf.DynamicFloat
         obj = cls.from_int(0, self.properties)
         self.assertEqual(obj.bits, 0x00000000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
         obj = cls.from_int(1, self.properties,
                            rounding_mode=ssf.RoundingMode.TiesToEven,
                            fp_state=ssf.FPState())
         self.assertEqual(obj.bits, 0x3F800000)
-        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags(0))
+        self.assertEqual(obj.fp_state.status_flags, ssf.StatusFlags())
 
     def test_to_int(self):
         cls = ssf.DynamicFloat
@@ -623,7 +624,7 @@ class TestDynamicFloat(unittest.TestCase):
         obj = arg.rsqrt(rounding_mode)
         self.assertEqual(obj.bits, 0x7F800000)
         self.assertEqual(obj.fp_state.status_flags,
-                         ssf.StatusFlags.DIVISION_BY_ZERO)
+                         ssf.StatusFlags().set_division_by_zero())
 
     def test_attributes(self):
         cls = ssf.DynamicFloat

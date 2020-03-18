@@ -24,7 +24,6 @@ num-bigint = "0.2"
 num-integer = "0.1"
 num-traits = "0.2"
 num-rational = "0.2"
-bitflags = "1.2"
 
 [dependencies.algebraics]
 version = ">= 0.1.2, < 0.2"
@@ -34,6 +33,8 @@ version = "1.2"
 optional = true
 
 [dependencies.pyo3]
-version = "0.9.0-alpha.1"
+# version = "0.9.0"
+git = "https://github.com/PyO3/pyo3"
+rev = "10999743169612e7483f484d951eca0f6723b1b0"
 optional = true
 features = ["num-bigint"]

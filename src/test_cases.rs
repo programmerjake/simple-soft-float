@@ -3,9 +3,15 @@
 use super::*;
 use std::any::Any;
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+enum TestCasePlatform {
+    RISCV,
+    POWER,
+}
+
 trait TestCaseArgument: Any {
     fn parse_into(&mut self, text: &str) -> Result<(), String>;
-    fn same(&self, other: &dyn TestCaseArgument) -> bool;
+    fn same(&self, other: &dyn TestCaseArgument, platform: TestCasePlatform) -> bool;
     fn as_any(&self) -> &dyn Any;
     fn debug(&self) -> String;
     fn make_assignment_target() -> Self
@@ -83,7 +89,7 @@ macro_rules! impl_test_case_argument_for_int {
                 *self = retval;
                 Ok(())
             }
-            fn same(&self, other: &dyn TestCaseArgument) -> bool {
+            fn same(&self, other: &dyn TestCaseArgument, _platform: TestCasePlatform) -> bool {
                 test_case_argument_same(self, other, PartialEq::eq)
             }
             #[allow(unused_comparisons)]
@@ -116,7 +122,7 @@ macro_rules! impl_test_case_argument_for_int {
                 *self = Some(retval);
                 Ok(())
             }
-            fn same(&self, other: &dyn TestCaseArgument) -> bool {
+            fn same(&self, other: &dyn TestCaseArgument, _platform: TestCasePlatform) -> bool {
                 test_case_argument_same(self, other, PartialEq::eq)
             }
             #[allow(unused_comparisons)]
@@ -156,7 +162,7 @@ impl TestCaseArgument for bool {
         };
         Ok(())
     }
-    fn same(&self, other: &dyn TestCaseArgument) -> bool {
+    fn same(&self, other: &dyn TestCaseArgument, _platform: TestCasePlatform) -> bool {
         test_case_argument_same(self, other, PartialEq::eq)
     }
     fn debug(&self) -> String {
@@ -177,7 +183,7 @@ impl TestCaseArgument for F16 {
         *self = F16::from_bits(value);
         Ok(())
     }
-    fn same(&self, other: &dyn TestCaseArgument) -> bool {
+    fn same(&self, other: &dyn TestCaseArgument, _platform: TestCasePlatform) -> bool {
         test_case_argument_same(self, other, |a, b| a.bits() == b.bits())
     }
     fn debug(&self) -> String {
@@ -198,7 +204,7 @@ impl TestCaseArgument for F32 {
         *self = F32::from_bits(value);
         Ok(())
     }
-    fn same(&self, other: &dyn TestCaseArgument) -> bool {
+    fn same(&self, other: &dyn TestCaseArgument, _platform: TestCasePlatform) -> bool {
         test_case_argument_same(self, other, |a, b| a.bits() == b.bits())
     }
     fn debug(&self) -> String {
@@ -223,7 +229,7 @@ macro_rules! impl_test_case_argument_for_enum {
                 };
                 Ok(())
             }
-            fn same(&self, other: &dyn TestCaseArgument) -> bool {
+            fn same(&self, other: &dyn TestCaseArgument, _platform: TestCasePlatform) -> bool {
                 test_case_argument_same(self, other, PartialEq::eq)
             }
             fn debug(&self) -> String {
@@ -282,7 +288,7 @@ impl TestCaseArgument for Option<Ordering> {
         *self = Some(retval);
         Ok(())
     }
-    fn same(&self, other: &dyn TestCaseArgument) -> bool {
+    fn same(&self, other: &dyn TestCaseArgument, _platform: TestCasePlatform) -> bool {
         test_case_argument_same(self, other, PartialEq::eq)
     }
     fn debug(&self) -> String {
@@ -304,20 +310,40 @@ impl TestCaseArgument for StatusFlags {
         }
         let mut retval = StatusFlags::empty();
         for word in text.split('|') {
-            retval |= match word {
-                "INVALID_OPERATION" => StatusFlags::INVALID_OPERATION,
-                "DIVISION_BY_ZERO" => StatusFlags::DIVISION_BY_ZERO,
-                "OVERFLOW" => StatusFlags::OVERFLOW,
-                "UNDERFLOW" => StatusFlags::UNDERFLOW,
-                "INEXACT" => StatusFlags::INEXACT,
+            retval = match word {
+                "INVALID_OPERATION" => retval.signal_invalid_operation(),
+                "DIVISION_BY_ZERO" => retval.signal_division_by_zero(),
+                "OVERFLOW" => retval.signal_overflow(),
+                "UNDERFLOW" => retval.signal_underflow(),
+                "INEXACT" => retval.signal_inexact(),
                 _ => return Err("invalid status flags".into()),
             };
         }
         *self = retval;
         Ok(())
     }
-    fn same(&self, other: &dyn TestCaseArgument) -> bool {
-        test_case_argument_same(self, other, PartialEq::eq)
+    fn same(&self, other: &dyn TestCaseArgument, platform: TestCasePlatform) -> bool {
+        macro_rules! test_flags {
+            ($lhs:expr, $rhs:expr, [$($flag:ident,)+]) => {
+                $(
+                    ($lhs.$flag() == $rhs.$flag())
+                )&+
+            }
+        }
+        test_case_argument_same(self, other, |lhs, rhs| match platform {
+            TestCasePlatform::RISCV => test_flags!(
+                lhs,
+                rhs,
+                [
+                    invalid_operation,
+                    division_by_zero,
+                    overflow,
+                    underflow,
+                    inexact,
+                ]
+            ),
+            TestCasePlatform::POWER => todo!(),
+        })
     }
     fn debug(&self) -> String {
         format!("{:?}", self)
@@ -364,7 +390,12 @@ trait TestCase {
         Self: Sized;
     fn io(&mut self) -> TestCaseIO<'_>;
     fn calculate(&mut self, location: FileLocation);
-    fn parse_and_run(&mut self, test_case: &str, location: FileLocation) {
+    fn parse_and_run(
+        &mut self,
+        test_case: &str,
+        location: FileLocation,
+        platform: TestCasePlatform,
+    ) {
         let mut arguments_text = test_case.split(' ').filter(|v| !v.is_empty());
         let io = self.io();
         for argument in io.inputs {
@@ -413,14 +444,17 @@ trait TestCase {
             );
         }
         for argument in io.outputs {
-            if !argument.expected_argument.same(argument.output_argument) {
+            if !argument
+                .expected_argument
+                .same(argument.output_argument, platform)
+            {
                 panic!("{}: test case failed", location);
             }
         }
     }
 }
 
-fn execute_test_cases<T: TestCase>(test_cases: &str, file_name: &str) {
+fn execute_test_cases<T: TestCase>(test_cases: &str, file_name: &str, platform: TestCasePlatform) {
     for (i, test_case) in test_cases.lines().enumerate() {
         if test_case.starts_with('#') || test_case.is_empty() {
             continue;
@@ -431,6 +465,7 @@ fn execute_test_cases<T: TestCase>(test_cases: &str, file_name: &str) {
                 file_name,
                 line: i + 1,
             },
+            platform,
         );
     }
 }
@@ -438,6 +473,7 @@ fn execute_test_cases<T: TestCase>(test_cases: &str, file_name: &str) {
 macro_rules! test_case {
     (
         #[test_case_file_name = $test_case_file_name:expr]
+        #[platform = $platform:ident]
         $(#[$meta:meta])*
         fn $test_name:ident($($input:ident: $input_type:ty,)+ $(#[output] $output:ident: $output_type:ty,)+) {
             $($body:tt)*
@@ -445,6 +481,7 @@ macro_rules! test_case {
     ) => {
         test_case!{
             #[test_case_file_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/", $test_case_file_name)]
+            #[platform = $platform]
             $(#[$meta])*
             fn $test_name($($input: $input_type,)+ $(#[output] $output: $output_type,)+) {
                 $($body)*
@@ -453,6 +490,7 @@ macro_rules! test_case {
     };
     (
         #[test_case_file_path = $test_case_file_path:expr]
+        #[platform = $platform:ident]
         $(#[$meta:meta])*
         fn $test_name:ident($($input:ident: $input_type:ty,)+ $(#[output] $output:ident: $output_type:ty,)+) {
             $($body:tt)*
@@ -500,13 +538,14 @@ macro_rules! test_case {
                     $test_name($(self.$input.clone(),)+ $(&mut self.$output.1,)+ location);
                 }
             }
-            execute_test_cases::<TestCaseImpl>(include_str!($test_case_file_path), $test_case_file_path);
+            execute_test_cases::<TestCaseImpl>(include_str!($test_case_file_path), $test_case_file_path, TestCasePlatform::$platform);
         }
     };
 }
 
 test_case! {
     #[test_case_file_name = "from_real_algebraic_number.txt"]
+    #[platform = RISCV]
     #[allow(clippy::too_many_arguments)]
     fn test_from_real_algebraic_number(
         mantissa: i32,
@@ -544,6 +583,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "add.txt"]
+    #[platform = RISCV]
     fn test_add(lhs: F16,
                 rhs: F16,
                 rounding_mode: RoundingMode,
@@ -565,6 +605,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "sub.txt"]
+    #[platform = RISCV]
     fn test_sub(lhs: F16,
                 rhs: F16,
                 rounding_mode: RoundingMode,
@@ -586,6 +627,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "mul.txt"]
+    #[platform = RISCV]
     fn test_mul(lhs: F16,
                 rhs: F16,
                 rounding_mode: RoundingMode,
@@ -607,6 +649,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "div.txt"]
+    #[platform = RISCV]
     fn test_div(lhs: F16,
                 rhs: F16,
                 rounding_mode: RoundingMode,
@@ -628,6 +671,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "ieee754_remainder.txt"]
+    #[platform = RISCV]
     fn test_ieee754_remainder(lhs: F16,
                 rhs: F16,
                 rounding_mode: RoundingMode,
@@ -669,6 +713,7 @@ fn mul_add_test_case(
 
 test_case! {
     #[test_case_file_name = "mul_add_ties_to_even.txt"]
+    #[platform = RISCV]
     #[allow(clippy::too_many_arguments)]
     fn test_mul_add_ties_to_even(
         value1: F16,
@@ -691,6 +736,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "mul_add_toward_zero.txt"]
+    #[platform = RISCV]
     #[allow(clippy::too_many_arguments)]
     fn test_mul_add_toward_zero(
         value1: F16,
@@ -713,6 +759,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "mul_add_toward_negative.txt"]
+    #[platform = RISCV]
     #[allow(clippy::too_many_arguments)]
     fn test_mul_add_toward_negative(
         value1: F16,
@@ -735,6 +782,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "mul_add_toward_positive.txt"]
+    #[platform = RISCV]
     #[allow(clippy::too_many_arguments)]
     fn test_mul_add_toward_positive(
         value1: F16,
@@ -757,6 +805,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "mul_add_ties_to_away.txt"]
+    #[platform = RISCV]
     #[allow(clippy::too_many_arguments)]
     fn test_mul_add_ties_to_away(
         value1: F16,
@@ -779,6 +828,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "round_to_integral.txt"]
+    #[platform = RISCV]
     fn test_round_to_integral(value: F16,
                               rounding_mode: RoundingMode,
                               tininess_detection_mode: TininessDetectionMode,
@@ -799,6 +849,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "round_to_integral_exact.txt"]
+    #[platform = RISCV]
     fn test_round_to_integral_exact(value: F16,
                               rounding_mode: RoundingMode,
                               tininess_detection_mode: TininessDetectionMode,
@@ -819,6 +870,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "next_up_or_down.txt"]
+    #[platform = RISCV]
     fn test_next_up_or_down(
         value: F16,
         #[output] up_result: F16,
@@ -837,6 +889,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "scale_b.txt"]
+    #[platform = RISCV]
     fn test_scale_b(value: F16,
                     scale: i64,
                     rounding_mode: RoundingMode,
@@ -858,6 +911,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "sqrt.txt"]
+    #[platform = RISCV]
     fn test_sqrt(value: F16,
                  rounding_mode: RoundingMode,
                  tininess_detection_mode: TininessDetectionMode,
@@ -878,6 +932,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "f16_to_f32.txt"]
+    #[platform = RISCV]
     fn test_f16_to_f32(value: F16,
                        rounding_mode: RoundingMode,
                        tininess_detection_mode: TininessDetectionMode,
@@ -898,6 +953,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "f32_to_f16.txt"]
+    #[platform = RISCV]
     fn test_f32_to_f16(value: F32,
                        rounding_mode: RoundingMode,
                        tininess_detection_mode: TininessDetectionMode,
@@ -918,6 +974,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "compare_signaling.txt"]
+    #[platform = RISCV]
     fn test_compare_signaling(value1: F16,
                               value2: F16,
                               #[output] result: Option<Ordering>,
@@ -931,6 +988,7 @@ test_case! {
 
 test_case! {
     #[test_case_file_name = "compare_quiet.txt"]
+    #[platform = RISCV]
     fn test_compare_quiet(value1: F16,
                           value2: F16,
                           #[output] result: Option<Ordering>,
@@ -946,6 +1004,7 @@ macro_rules! float_to_int_test_case {
     ($test_name:ident, $test_data:expr, $src_type:ident, $dest_type:ident, $convert_fn:ident) => {
         test_case! {
             #[test_case_file_name = $test_data]
+            #[platform = RISCV]
             fn $test_name(value: $src_type,
                           exact: bool,
                           rounding_mode: RoundingMode,
@@ -973,6 +1032,7 @@ macro_rules! int_to_float_test_case {
     ($test_name:ident, $test_data:expr, $src_type:ident, $dest_type:ident, $convert_fn:ident) => {
         test_case! {
             #[test_case_file_name = $test_data]
+            #[platform = RISCV]
             fn $test_name(value: $src_type,
                           rounding_mode: RoundingMode,
                           tininess_detection_mode: TininessDetectionMode,
@@ -999,6 +1059,7 @@ int_to_float_test_case!(test_u64_to_f32, "u64_to_f32.txt", u64, F32, from_u64);
 
 test_case! {
     #[test_case_file_name = "rsqrt.txt"]
+    #[platform = RISCV]
     fn test_rsqrt(value: F16,
                  rounding_mode: RoundingMode,
                  tininess_detection_mode: TininessDetectionMode,

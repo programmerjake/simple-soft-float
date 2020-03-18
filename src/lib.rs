@@ -8,7 +8,6 @@
 //! Soft-float library that intends to be a straightforward reference implementation of IEEE 754
 
 use algebraics::prelude::*;
-use bitflags::bitflags;
 use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 use num_rational::Ratio;
@@ -26,6 +25,8 @@ use std::{
 
 #[cfg(feature = "python")]
 use crate::python::PyPlatformProperties;
+#[cfg(feature = "python")]
+use crate::python::PyStatusFlags;
 #[cfg(feature = "python")]
 use crate::python::ToPythonRepr;
 #[cfg(feature = "python")]
@@ -156,28 +157,335 @@ impl Default for RoundingMode {
     }
 }
 
-bitflags! {
-    /// IEEE 754 status flags
-    pub struct StatusFlags: u32 {
-        /// Signaled if there is no usefully definable result.
-        const INVALID_OPERATION = 0b00001;
-        /// Signaled when a exact infinite result is generated from an operation
-        /// on finite operands.
-        const DIVISION_BY_ZERO = 0b00010;
-        /// Signaled when what would be the correctly rounded result were the
-        /// exponent range unbounded is larger in magnitude than the largest
-        /// finite representable number.
-        const OVERFLOW = 0b00100;
-        /// Signaled when a tiny non-zero result is detected.
-        const UNDERFLOW = 0b01000;
-        /// Signaled when the result of a floating-point operation is not exact.
-        const INEXACT = 0b10000;
+/// IEEE 754 status flags
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct StatusFlags(u32);
+
+impl StatusFlags {
+    /// return the `StatusFlags` value without any flags set.
+    #[must_use]
+    pub const fn empty() -> Self {
+        StatusFlags(0)
+    }
+    /// return the underlying bits
+    #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+    /// create a `StatusFlags` value from the underlying bits.
+    ///
+    /// # Safety
+    /// all `0` bits returned by [`all`](#method.all) must also be `0` in `bits`.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn from_bits_unchecked(bits: u32) -> Self {
+        StatusFlags(bits)
+    }
+    /// create a `StatusFlags` value from the underlying bits, clearing the unsupported bits.
+    ///
+    /// This is the equivalent of `Self::from_bits_unchecked(bits & Self::all().bits())`.
+    #[inline]
+    #[must_use]
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        StatusFlags(bits & StatusFlags::all().0)
+    }
+    /// create a `StatusFlags` value from the underlying bits, returning `None` if any of the set `bits` is unsupported.
+    #[inline]
+    #[must_use]
+    pub fn from_bits(bits: u32) -> Option<Self> {
+        if (bits & !StatusFlags::all().0) != 0 {
+            None
+        } else {
+            Some(StatusFlags(bits))
+        }
+    }
+    /// combine two `StatusFlags` values into one, returning the result
+    #[must_use]
+    pub const fn merge(self, rhs: Self) -> Self {
+        let ExpandedStatusFlags {
+            mut invalid_operation,
+            mut division_by_zero,
+            mut overflow,
+            mut underflow,
+            mut inexact,
+        } = self.expand();
+        let ExpandedStatusFlags {
+            invalid_operation: rhs_invalid_operation,
+            division_by_zero: rhs_division_by_zero,
+            overflow: rhs_overflow,
+            underflow: rhs_underflow,
+            inexact: rhs_inexact,
+        } = rhs.expand();
+
+        invalid_operation |= rhs_invalid_operation;
+        division_by_zero |= rhs_division_by_zero;
+        overflow |= rhs_overflow;
+        underflow |= rhs_underflow;
+        inexact |= rhs_inexact;
+
+        ExpandedStatusFlags {
+            invalid_operation,
+            division_by_zero,
+            overflow,
+            underflow,
+            inexact,
+        }
+        .contract()
+    }
+}
+
+/// equivalent of `if v { 0xFFFF_FFFF } else { 0 }`
+const fn bool_to_u32_mask(v: bool) -> u32 {
+    -(v as i32) as u32
+}
+
+macro_rules! status_flags {
+    (
+        $(
+            $(#[doc = $doc:literal])+
+            fn $get_fn:ident();
+            $(#[doc = $set_doc:literal])+
+            #[set_fn]
+            fn $set_fn:ident();
+            $(#[doc = $signal_doc:literal])+
+            #[signal_fn]
+            fn $signal_fn:ident();
+        )+
+    ) => {
+        /// internal helper for assigning bit indexes for StatusFlags
+        #[repr(u32)]
+        enum StatusFlagsIndexHelper {
+            $(
+                #[allow(non_camel_case_types)]
+                $get_fn,
+            )+
+        }
+
+        /// internal helper for assigning bit masks for StatusFlags
+        struct StatusFlagsMaskHelper;
+
+        impl StatusFlagsMaskHelper {
+            $(
+                #[allow(non_upper_case_globals)]
+                const $get_fn: u32 = 1 << (StatusFlagsIndexHelper::$get_fn as u32);
+            )+
+        }
+
+        #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+        struct ExpandedStatusFlags {
+            $($get_fn: bool,)+
+        }
+
+        impl ExpandedStatusFlags {
+            #[inline]
+            const fn contract(self) -> StatusFlags {
+                let mut retval = 0;
+                $(retval |= (self.$get_fn as u32) << (StatusFlagsIndexHelper::$get_fn as u32);)+
+                StatusFlags(retval)
+            }
+        }
+
+        impl StatusFlags {
+            fn for_each_set_flag<F: FnMut(&'static str) -> Result<(), E>, E>(self, mut f: F) -> Result<(), E> {
+                $(
+                    if self.$get_fn() {
+                        f(stringify!($get_fn))?;
+                    }
+                )+
+                Ok(())
+            }
+            #[inline]
+            #[must_use]
+            const fn expand(self) -> ExpandedStatusFlags {
+                ExpandedStatusFlags {
+                    $($get_fn: self.$get_fn(),)+
+                }
+            }
+            /// return the `StatusFlags` value with all flags set.
+            #[inline]
+            #[must_use]
+            pub const fn all() -> Self {
+                StatusFlags($(StatusFlagsMaskHelper::$get_fn)|+)
+            }
+            $(
+                $(#[doc = $doc])+
+                #[inline]
+                #[must_use]
+                pub const fn $get_fn(self) -> bool {
+                    (self.0 & StatusFlagsMaskHelper::$get_fn) != 0
+                }
+                $(#[doc = $set_doc])+
+                #[inline]
+                #[must_use]
+                pub const fn $set_fn(mut self, value: bool) -> Self {
+                    self.0 &= !StatusFlagsMaskHelper::$get_fn;
+                    self.0 |= StatusFlagsMaskHelper::$get_fn & $crate::bool_to_u32_mask(value);
+                    self
+                }
+                $(#[doc = $signal_doc])+
+                #[inline]
+                #[must_use]
+                pub const fn $signal_fn(self) -> Self {
+                    self.$set_fn(true)
+                }
+            )+
+        }
+
+        #[cfg(test)]
+        #[test]
+        fn status_flags_name_tests() {
+            $(
+                assert_eq!(concat!("set_", stringify!($get_fn)), stringify!($set_fn), concat!("invalid name for set_fn for ", stringify!($get_fn)));
+                assert_eq!(concat!("signal_", stringify!($get_fn)), stringify!($signal_fn), concat!("invalid name for signal_fn for ", stringify!($get_fn)));
+            )+
+        }
+
+        #[cfg(feature = "python")]
+        #[pymethods]
+        impl PyStatusFlags {
+            #[new]
+            fn new(value: Option<StatusFlags>) -> PyStatusFlags {
+                PyStatusFlags {
+                    value: value.unwrap_or_default(),
+                }
+            }
+            /// return the `StatusFlags` value with all flags set.
+            #[staticmethod]
+            #[text_signature = "()"]
+            pub fn all() -> StatusFlags {
+                StatusFlags::all()
+            }
+            $(
+                $(#[doc = $doc])+
+                #[getter($get_fn)]
+                fn $get_fn(&self) -> bool {
+                    self.value.$get_fn()
+                }
+                $(#[doc = $set_doc])+
+                #[text_signature = "($self, value=True)"]
+                #[args(value = "true")]
+                fn $set_fn(&self, value: bool) -> StatusFlags {
+                    self.value.$set_fn(value)
+                }
+                $(#[doc = $signal_doc])+
+                #[text_signature = "($self)"]
+                fn $signal_fn(&self) -> StatusFlags {
+                    self.value.$signal_fn()
+                }
+            )+
+            /// the underlying bits
+            #[getter]
+            pub fn bits(&self) -> u32 {
+                self.value.bits()
+            }
+            /// create a `StatusFlags` value from the underlying bits, clearing the unsupported bits.
+            ///
+            /// This is the equivalent of `StatusFlags.from_bits(bits & StatusFlags.all().bits)`.
+            #[staticmethod]
+            #[text_signature = "(bits)"]
+            pub fn from_bits_truncate(bits: u32) -> StatusFlags {
+                StatusFlags::from_bits_truncate(bits)
+            }
+            /// create a `StatusFlags` value from the underlying bits, returning `None` if any of the set `bits` is unsupported.
+            #[staticmethod]
+            #[text_signature = "(bits)"]
+            pub fn from_bits(bits: u32) -> Option<StatusFlags> {
+                StatusFlags::from_bits(bits)
+            }
+            /// combine two `StatusFlags` values into one, returning the result
+            #[text_signature = "($self, rhs)"]
+            pub fn merge(&self, rhs: StatusFlags) -> StatusFlags {
+                StatusFlags::merge(self.value, rhs)
+            }
+            /// Set the inexact flag, then signal the underflow flag, returning the result as a new `StatusFlags`
+            #[text_signature = "($self)"]
+            pub fn signal_underflow_with_inexact(&self) -> StatusFlags {
+                StatusFlags::signal_underflow_with_inexact(self.value)
+            }
+            /// Set the inexact flag, then signal the overflow flag, returning the result as a new `StatusFlags`
+            #[text_signature = "($self)"]
+            pub fn signal_overflow_with_inexact(&self) -> StatusFlags {
+                StatusFlags::signal_overflow_with_inexact(self.value)
+            }
+        }
+    };
+}
+
+status_flags! {
+    /// Signaled if there is no usefully definable result.
+    fn invalid_operation();
+    /// return a new `StatusFlags` with the `invalid_operation` flag set to `value`.
+    #[set_fn]
+    fn set_invalid_operation();
+    /// return a new `StatusFlags` with the `invalid_operation` flag signaled. This may involve setting additional flags.
+    #[signal_fn]
+    fn signal_invalid_operation();
+
+    /// Signaled when a exact infinite result is generated from an operation
+    /// on finite operands.
+    fn division_by_zero();
+    /// return a new `StatusFlags` with the `division_by_zero` flag set to `value`.
+    #[set_fn]
+    fn set_division_by_zero();
+    /// return a new `StatusFlags` with the `division_by_zero` flag signaled. This may involve setting additional flags.
+    #[signal_fn]
+    fn signal_division_by_zero();
+
+    /// Signaled when what would be the correctly rounded result were the
+    /// exponent range unbounded is larger in magnitude than the largest
+    /// finite representable number.
+    fn overflow();
+    /// return a new `StatusFlags` with the `overflow` flag set to `value`.
+    #[set_fn]
+    fn set_overflow();
+    /// return a new `StatusFlags` with the `overflow` flag signaled. This may involve setting additional flags.
+    #[signal_fn]
+    fn signal_overflow();
+
+    /// Signaled when a tiny non-zero result is detected.
+    fn underflow();
+    /// return a new `StatusFlags` with the `underflow` flag set to `value`.
+    #[set_fn]
+    fn set_underflow();
+    /// return a new `StatusFlags` with the `underflow` flag signaled. This may involve setting additional flags.
+    #[signal_fn]
+    fn signal_underflow();
+
+    /// Signaled when the result of a floating-point operation is not exact.
+    fn inexact();
+    /// return a new `StatusFlags` with the `inexact` flag set to `value`.
+    #[set_fn]
+    fn set_inexact();
+    /// return a new `StatusFlags` with the `inexact` flag signaled. This may involve setting additional flags.
+    #[signal_fn]
+    fn signal_inexact();
+}
+
+impl StatusFlags {
+    /// Set the inexact flag, then signal the underflow flag, returning the result as a new `StatusFlags`
+    #[inline]
+    #[must_use]
+    pub const fn signal_underflow_with_inexact(self) -> Self {
+        self.set_inexact(true).signal_underflow()
+    }
+    /// Set the inexact flag, then signal the overflow flag, returning the result as a new `StatusFlags`
+    #[inline]
+    #[must_use]
+    pub const fn signal_overflow_with_inexact(self) -> Self {
+        self.set_inexact(true).signal_overflow()
     }
 }
 
 impl Default for StatusFlags {
     fn default() -> Self {
         StatusFlags::empty()
+    }
+}
+
+impl fmt::Debug for StatusFlags {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "StatusFlags::empty()")?;
+        self.for_each_set_flag(|name| write!(f, ".set_{}(true)", name))
     }
 }
 
@@ -776,7 +1084,7 @@ impl From<FPStateMergeFailed> for PyErr {
 impl FPState {
     /// combine two `FPState` values into one, assigning the result to `self`
     pub fn checked_merge_assign(&mut self, rhs: Self) -> Result<(), FPStateMergeFailed> {
-        let status_flags = self.status_flags | rhs.status_flags;
+        let status_flags = self.status_flags.merge(rhs.status_flags);
         let same = Self {
             status_flags,
             ..*self
@@ -1980,7 +2288,7 @@ macro_rules! impl_to_int_type {
                 Some(retval)
             } else {
                 // ignore possible INEXACT flags
-                fp_state.status_flags = old_status_flags | StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = old_status_flags.signal_invalid_operation();
                 None
             }
         }
@@ -2492,7 +2800,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             Sign::Positive
         } else if !properties.has_sign_bit() {
             if !value.is_zero() {
-                fp_state.status_flags |= StatusFlags::INEXACT | StatusFlags::UNDERFLOW;
+                fp_state.status_flags = fp_state.status_flags.signal_underflow_with_inexact();
             }
             return Self::positive_zero_with_traits(traits);
         } else {
@@ -2514,7 +2822,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             .expect("exponent_max_normal doesn't fit in i64")
             - exponent_bias_i64;
         if exponent > exponent_max {
-            fp_state.status_flags |= StatusFlags::INEXACT | StatusFlags::OVERFLOW;
+            fp_state.status_flags = fp_state.status_flags.signal_overflow_with_inexact();
             match (rounding_mode, sign) {
                 (RoundingMode::TowardNegative, Sign::Positive)
                 | (RoundingMode::TowardPositive, Sign::Negative)
@@ -2553,8 +2861,8 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             ExceptionHandlingMode::IgnoreExactUnderflow => inexact,
             ExceptionHandlingMode::SignalExactUnderflow => true,
         };
-        if exponent < exponent_min && check_for_underflow {
-            let tiny = match fp_state.tininess_detection_mode {
+        let tiny = if exponent < exponent_min && check_for_underflow {
+            match fp_state.tininess_detection_mode {
                 TininessDetectionMode::BeforeRounding => true,
                 TininessDetectionMode::AfterRounding => {
                     if retval_mantissa < min_normal_mantissa {
@@ -2572,17 +2880,22 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                             < exponent_min
                     }
                 }
-            };
-            if tiny {
-                fp_state.status_flags |= StatusFlags::UNDERFLOW;
             }
-        }
-        if inexact {
-            fp_state.status_flags |= StatusFlags::INEXACT;
-        }
-        if retval_exponent > exponent_max {
-            fp_state.status_flags |= StatusFlags::OVERFLOW;
+        } else {
+            false
+        };
+        if tiny {
+            if inexact {
+                fp_state.status_flags = fp_state.status_flags.signal_underflow_with_inexact();
+            } else {
+                fp_state.status_flags = fp_state.status_flags.signal_underflow();
+            }
+        } else if retval_exponent > exponent_max {
+            assert!(inexact);
+            fp_state.status_flags = fp_state.status_flags.signal_overflow_with_inexact();
             return Self::signed_infinity_with_traits(sign, traits);
+        } else if inexact {
+            fp_state.status_flags = fp_state.status_flags.signal_inexact();
         }
         let mut retval = Self::signed_zero_with_traits(sign, traits);
         if retval_mantissa < min_normal_mantissa {
@@ -2639,7 +2952,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             | (_, FloatClass::SignalingNaN)
             | (_, FloatClass::QuietNaN) => {
                 if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
-                    fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                    fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
                 }
                 match properties
                     .platform_properties
@@ -2655,7 +2968,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             }
             (FloatClass::NegativeInfinity, FloatClass::PositiveInfinity)
             | (FloatClass::PositiveInfinity, FloatClass::NegativeInfinity) => {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
                 Self::quiet_nan_with_traits(self.traits.clone())
             }
             (FloatClass::PositiveInfinity, _) | (_, FloatClass::PositiveInfinity) => {
@@ -2736,7 +3049,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let result_sign = self.sign() * rhs.sign();
         if self_class.is_nan() || rhs_class.is_nan() {
             if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             match properties
                 .platform_properties
@@ -2752,7 +3065,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         } else if (self_class.is_infinity() && rhs_class.is_zero())
             || (self_class.is_zero() && rhs_class.is_infinity())
         {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             Self::quiet_nan_with_traits(self.traits.clone())
         } else if self_class.is_zero() || rhs_class.is_zero() {
             Self::signed_zero_with_traits(result_sign, self.traits.clone())
@@ -2786,7 +3099,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let result_sign = self.sign() * rhs.sign();
         if self_class.is_nan() || rhs_class.is_nan() {
             if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             match properties
                 .platform_properties
@@ -2802,14 +3115,14 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         } else if (self_class.is_infinity() && rhs_class.is_infinity())
             || (self_class.is_zero() && rhs_class.is_zero())
         {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             Self::quiet_nan_with_traits(self.traits.clone())
         } else if self_class.is_zero() || rhs_class.is_infinity() {
             Self::signed_zero_with_traits(result_sign, self.traits.clone())
         } else if self_class.is_infinity() {
             Self::signed_infinity_with_traits(result_sign, self.traits.clone())
         } else if rhs_class.is_zero() {
-            fp_state.status_flags |= StatusFlags::DIVISION_BY_ZERO;
+            fp_state.status_flags = fp_state.status_flags.signal_division_by_zero();
             Self::signed_infinity_with_traits(result_sign, self.traits.clone())
         } else {
             let lhs_value = self.to_real_algebraic_number().expect("known to be finite");
@@ -2838,7 +3151,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let rhs_class = rhs.class();
         if self_class.is_nan() || rhs_class.is_nan() {
             if self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             match properties
                 .platform_properties
@@ -2852,7 +3165,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 }
             }
         } else if self_class.is_infinity() || rhs_class.is_zero() {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             Self::quiet_nan_with_traits(self.traits.clone())
         } else if rhs_class.is_infinity() {
             if self_class.is_zero() {
@@ -2920,16 +3233,16 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 || factor_class.is_signaling_nan()
                 || term_class.is_signaling_nan()
             {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             if is_infinity_times_zero && term_class.is_quiet_nan() {
                 match properties.platform_properties.fma_inf_zero_qnan_result {
                     FMAInfZeroQNaNResult::CanonicalAndGenerateInvalid => {
-                        fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                        fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
                         return Self::quiet_nan_with_traits(self.traits.clone());
                     }
                     FMAInfZeroQNaNResult::PropagateAndGenerateInvalid => {
-                        fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                        fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
                         return term.clone();
                     }
                     FMAInfZeroQNaNResult::FollowNaNPropagationMode => {}
@@ -2952,7 +3265,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 && term_class.is_infinity()
                 && product_sign != term.sign())
         {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             Self::quiet_nan_with_traits(self.traits.clone())
         } else if (self_class.is_zero() || factor_class.is_zero())
             && term_class.is_zero()
@@ -3004,7 +3317,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let rounding_mode = rounding_mode.unwrap_or(fp_state.rounding_mode);
         match self.class() {
             FloatClass::SignalingNaN => {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
                 return None;
             }
             class if !class.is_finite() => {
@@ -3019,7 +3332,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
             return Some(lower_value);
         }
         if exact {
-            fp_state.status_flags |= StatusFlags::INEXACT;
+            fp_state.status_flags = fp_state.status_flags.signal_inexact();
         }
         let upper_value = &lower_value + 1;
         match rounding_mode {
@@ -3070,7 +3383,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let class = self.class();
         if class.is_nan() {
             if class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             match properties
                 .platform_properties()
@@ -3140,7 +3453,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         match (self.class(), up_or_down) {
             (class, _) if class.is_nan() => {
                 if class.is_signaling_nan() {
-                    fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                    fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
                 }
                 match properties
                     .platform_properties()
@@ -3219,7 +3532,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let properties = self.properties();
         let class = self.class();
         if !class.is_finite() || class.is_zero() {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             return None;
         }
         let exponent_field: BigInt = self.exponent_field().into();
@@ -3254,7 +3567,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let class = self.class();
         if class.is_nan() {
             if class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             match properties
                 .platform_properties()
@@ -3308,7 +3621,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let class = self.class();
         if class.is_nan() {
             if class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             match properties
                 .platform_properties()
@@ -3325,7 +3638,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         } else if class.is_positive_infinity() {
             Self::positive_infinity_with_traits(self.traits.clone())
         } else if self.sign() == Sign::Negative {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             Self::quiet_nan_with_traits(self.traits.clone())
         } else {
             let value = self.to_real_algebraic_number().expect("known to be finite");
@@ -3352,7 +3665,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let class = src.class();
         if class.is_nan() {
             if class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             let mut retval = Self::quiet_nan_with_traits(traits);
             match dest_properties
@@ -3459,7 +3772,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         if self_class.is_nan() || rhs_class.is_nan() {
             if !quiet || self_class.is_signaling_nan() || rhs_class.is_signaling_nan() {
                 if let Some(fp_state) = fp_state {
-                    fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                    fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
                 }
             }
             None
@@ -3532,7 +3845,7 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
         let class = self.class();
         if class.is_nan() {
             if class.is_signaling_nan() {
-                fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+                fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             }
             match properties
                 .platform_properties()
@@ -3545,12 +3858,12 @@ impl<Bits: FloatBitsType, FT: FloatTraits<Bits = Bits>> Float<FT> {
                 UnaryNaNPropagationResults::First => self.to_quiet_nan(),
             }
         } else if class.is_zero() {
-            fp_state.status_flags |= StatusFlags::DIVISION_BY_ZERO;
+            fp_state.status_flags = fp_state.status_flags.signal_division_by_zero();
             Self::signed_infinity_with_traits(self.sign(), self.traits.clone())
         } else if class.is_positive_infinity() {
             Self::positive_zero_with_traits(self.traits.clone())
         } else if self.sign() == Sign::Negative {
-            fp_state.status_flags |= StatusFlags::INVALID_OPERATION;
+            fp_state.status_flags = fp_state.status_flags.signal_invalid_operation();
             Self::quiet_nan_with_traits(self.traits.clone())
         } else {
             let value = self.to_real_algebraic_number().expect("known to be finite");
@@ -4496,7 +4809,7 @@ mod tests {
                 let expected_status_flags: StatusFlags = if expected_result.is_some() {
                     StatusFlags::empty()
                 } else {
-                    StatusFlags::INVALID_OPERATION
+                    StatusFlags::empty().signal_invalid_operation()
                 };
                 println!("value: {:?}", value);
                 println!("expected_result: {:?}", expected_result);
