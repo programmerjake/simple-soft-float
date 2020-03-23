@@ -6,14 +6,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies.simple-soft-float]
-version = "0.1"
+version = "0.2"
 ```
 
 ## Installation for use from Python
 
 Install Rust using [rustup.rs](https://rustup.rs).
 
-Create CPython 3.6 to 3.7 virtualenv (not sure if 3.8 is supported yet).
+Create CPython 3.6 to 3.8 virtualenv.
 
 Install Python bindings build tool:
 ```bash
@@ -29,7 +29,7 @@ cd simple-soft-float
 Change source dir to use specific version of Rust nightly:
 (must be in `simple-soft-float` dir):
 ```bash
-rustup override set nightly-2019-07-19
+rustup override set nightly-2020-01-23
 ```
 
 Build and Test (like `setup.py develop`):
